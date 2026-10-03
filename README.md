@@ -1,7 +1,8 @@
 # Financial data API
 
-A demonstration API for loading a financial dataset, receiving its corrections,
-and reproducing research using the data available at an earlier point in time.
+A demonstration REST API for loading a financial dataset, receiving its
+corrections, and reproducing research using the data available at an earlier
+point in time.
 
 I'm [Nathan Slaughter](https://nathanslaughter.com/). My engineering work spans
 fintech, data pipelines, observability, and infrastructure, informed by a
@@ -9,47 +10,177 @@ background in investment research. I help teams turn datasets into APIs whose
 meaning and delivery behavior customers can depend on.
 
 **Status:** Project brief. This repository currently contains this README.
-The API, contract, deployment, and runnable demonstrations are planned.
+The API, contract, deployment, and runnable demonstrations are planned; nothing
+described here has been implemented or tested yet. The dataset is synthetic,
+and this is a demonstration project, not client work.
+
+## What this project demonstrates
+
+This is the supporting example for my REST API development and data modeling
+work. It shows the contract and delivery behavior a customer needs to load a
+dataset once, keep it current, and reproduce earlier research:
+
+- **Stable identities.** Series, observations, and revisions each have their
+  own identifiers, so a correction is recognizable without overwriting the
+  version used in earlier work.
+- **Explicit time semantics.** Observation periods, source publication times,
+  and customer availability times are separate fields with documented meanings.
+- **Historical queries.** A cutoff parameter returns the versions an entitled
+  customer could retrieve at that time.
+- **Pagination that cannot mix states.** Continuation tokens are bound to the
+  original snapshot, filters, API version, and position. An expired snapshot
+  requires a restart.
+- **Bulk delivery with a safe handoff to updates.** Each export identifies its
+  snapshot and the matching position in the change stream, so a revision made
+  during the export cannot fall between them.
+- **Access enforced on every path.** Entitlements are checked on queries,
+  resumed pages, and exports.
+- **A working customer.** The
+  [financial-data-sdk](https://github.com/nslaughter/financial-data-sdk)
+  keeps running against the API as it grows.
+
+The API is the second of four stages in a demonstration for financial data
+providers. It expands the small demo API in the SDK repository, and the
+[financial-data-api-monitor](https://github.com/nslaughter/financial-data-api-monitor)
+then checks what customers can retrieve from it. A final stage makes a
+deliberate contract change to the API and SDK.
 
 ## A customer can make successful requests and still have the wrong dataset
 
 A customer downloads a dataset and keeps a local copy. The provider then
 corrects an old observation. If the customer's next request asks only for
 dates after the last downloaded observation, it can miss the correction.
+Every request succeeds, and the local copy stays wrong.
 
-This project will use a fictional economic series to make that problem
-concrete. The proposed API separates observation identity from revision
-identity and observation periods from publication and availability times.
-Those distinctions support both a current copy and an explanation of what
-an earlier research result used.
+This project uses a fictional monthly activity index to make that problem
+concrete. Its August 2026 value is published as 102.4 on September 3 and
+revised to 102.1 on September 10. A proposed record looks like this:
+
+```json
+{
+  "series_id": "activity-index",
+  "observation_id": "obs_aug26",
+  "revision_id": "rev_aug26_1",
+  "period_start": "2026-08-01",
+  "period_end": "2026-09-01",
+  "value": "102.4",
+  "unit": "index_points",
+  "published_at": "2026-09-03T12:30:00Z",
+  "available_at": "2026-09-03T12:31:10Z"
+}
+```
+
+The September 10 revision keeps `observation_id` and gets a new `revision_id`.
+The period runs from August 1 up to September 1, with the end excluded. A
+decimal string preserves the value's representation, and the unit is explicit.
+`published_at` records source publication; `available_at` records when an
+entitled customer could first retrieve the record through the API.
 
 ## How a customer will load, update, and reproduce the data
 
-1. Load a consistent snapshot whose export identifies the corresponding
-   starting position in the update stream.
-2. Apply releases, revisions, and withdrawals from that position, saving
-   progress with the local data changes.
+1. Load a consistent snapshot from a bulk export. Its manifest carries the
+   snapshot identity, the matching start position in the change stream, the
+   schema version, coverage, and file checksums.
+2. Verify the files, then apply releases, revisions, and withdrawals from that
+   position. Each page of events and its next position are saved in one local
+   transaction, and event identities let a repeated page be recognized.
 3. Query the versions available at an earlier cutoff and compare the answer
-   with independently prepared fixture records.
+   with independently prepared fixture records:
 
-The [financial-data-sdk](https://github.com/nslaughter/financial-data-sdk)
-will act as a customer of the API. The demonstration will introduce a revision
-during an export to examine whether the snapshot and update handoff can lose
-it. Interrupted pagination, expired cursors, and changed access will supply
-additional acceptance cases.
+   ```text
+   GET /v1/observations?series_id=activity-index&period_start=2026-08-01&period_end=2026-09-01&available_as_of=2026-09-04T00:00:00Z
+   ```
+
+   After the revision, this query should still return 102.4. Without the
+   cutoff, current research receives 102.1.
+
+## Two walkthroughs show where the contract protects the customer
+
+The first introduces the September 10 revision while an export is being
+written. If the provider took the "start updates here" position after the file
+finished, the revision would be absent from the snapshot and already behind
+the update cursor. The walkthrough shows that failure, then shows how the
+manifest's consistent snapshot and position prevent it.
+
+The second shows a later revision entering historical research through a
+query that lacks an availability cutoff, and how the `available_as_of` query
+keeps the September 4 answer intact.
 
 ## The contract has to cover delivery as well as field names
 
 The planned contract will describe identifiers, units, missing values, time
 semantics, revision history, access rules, and recovery limits. Query, export,
 and update examples will use the same dataset so their results can be compared.
-A later version-change exercise will follow the consequences into the
-customer's stored data.
 
-The intended deliverables include a documented API specification, local startup
-instructions, seeded fixtures, automated checks, and a versioned release. The
-[delivery monitor](https://github.com/nslaughter/financial-data-api-monitor)
-will independently examine responses using ordinary customer access.
+Several delivery rules matter as much as the schema:
+
+- Withdrawals are events in the history. Deleting the original row would
+  destroy the answer to an earlier query.
+- A null observation carries a reason and stays distinct from zero.
+- A query that matches nothing is distinct from a denied request, so a
+  synchronization job cannot record success while its data goes stale.
+- Change-stream positions have a documented retention period. An expired
+  cursor reports that the customer needs a fresh snapshot instead of skipping
+  ahead.
+- Retrying an export download fetches the same retained files. Regenerating an
+  export creates a new snapshot identity and update position.
+- A token issued before access was revoked cannot grant that access on a
+  resumed request, and export files are protected like query endpoints.
+
+## The demonstration is complete when
+
+- The SDK workflow runs against the expanded API.
+- The eligible version at each cutoff matches independent fixtures, including
+  the gap between publication and customer availability.
+- Pagination returns a consistent result while data changes during traversal.
+- Unauthorized queries, resumed pages, and exports are refused.
+- Bulk delivery reconciles with subsequent updates, including a revision
+  published during an export.
+
+## What the repository will contain
+
+- An API specification and data dictionary.
+- A local startup command and seeded fixtures.
+- Query, export, and update examples.
+- Contract and authorization checks in CI.
+- A tagged release that names the compatible SDK version.
+- Documented retention and recovery policies, and the limits of the historical
+  availability claims.
+
+## A later contract change will test the maintenance work
+
+In the fourth stage, API v1 keeps a `date` field documented as the UTC
+publication date, and v2 replaces it with explicit `published_at`,
+`period_start`, `period_end`, and `available_at` fields. Each query and export
+selects a version, and continuation tokens keep that choice through pagination.
+A request for an unsupported version fails with an explanation instead of
+falling back to a different data model.
+
+The checks run through direct HTTP requests as well as the SDK, so a
+client-side workaround cannot hide a server error. The recovery rehearsal
+starts after a customer has already stored changed output: identify the
+affected exports and snapshots, reissue the data, and repair the customer's
+local copy.
+
+## What the historical results will and will not establish
+
+Availability here means an entitled customer could retrieve a record through
+the API. It does not establish when any customer actually downloaded it. If the
+provider later corrects a conversion error, the API must distinguish the data
+it served from history reconstructed with the correction. The demonstration
+runs locally against synthetic data and makes no performance or scale claims.
+
+## Related projects and writing
+
+- [financial-data-sdk](https://github.com/nslaughter/financial-data-sdk):
+  the Python client that acts as this API's customer.
+- [financial-data-api-monitor](https://github.com/nslaughter/financial-data-api-monitor):
+  scheduled checks of what customers retrieve from this API.
+- *Turning a financial dataset into a dependable API* and *The timestamps that
+  make financial data usable*: articles on this design, in preparation. I'll
+  link them here when they are published.
+- *Shipping an API change your customers can adopt confidently*: an article
+  on the migration stage, also in preparation.
 
 ## Work with me on programmatic access to your dataset
 
@@ -58,5 +189,5 @@ and update workflows your customers need. An engagement includes agreed
 acceptance cases, documentation, and handover, with maintenance available
 after delivery.
 
-[Discuss a financial data API](https://nathanslaughter.com/) with your
-dataset, intended users, and the workflows it needs to support.
+[Discuss a financial data API](https://www.linkedin.com/in/nathan-slaughter)
+with your dataset, intended users, and the workflows it needs to support.
