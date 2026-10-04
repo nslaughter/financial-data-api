@@ -159,6 +159,20 @@ func TestLoadRefusesMalformedFiles(t *testing.T) {
 			want: `revisions.json: revisions[1]: missing member "revision_id"`,
 		},
 		{
+			name: "repeated file member",
+			alter: func(t *testing.T, fsys fstest.MapFS) {
+				replace(t, fsys, DatasetsFile, `"contract_version"`, `"contract_version": "0.3.0", "contract_version"`)
+			},
+			want: `datasets.json: repeated member "contract_version"`,
+		},
+		{
+			name: "repeated record member",
+			alter: func(t *testing.T, fsys fstest.MapFS) {
+				replace(t, fsys, RevisionsFile, `"value": "97.1",`, `"value": "97.1", "value": "55.5",`)
+			},
+			want: `revisions.json: revisions[0]: repeated member "value"`,
+		},
+		{
 			name: "member name in another case",
 			alter: func(t *testing.T, fsys fstest.MapFS) {
 				replace(t, fsys, RevisionsFile, `"value": "97.1"`, `"Value": "97.1"`)

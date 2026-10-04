@@ -102,8 +102,8 @@ type Credential struct {
 // Load reads the fixture files from fsys and checks the invariants. A file
 // that is missing or cannot be decoded is an error naming the file and, for a
 // record, the record. Every record must have exactly the members of its table
-// in the data contract, and only a nullable member may be null. If the
-// fixtures decode but break invariants, the error is Violations.
+// in the data contract, each once, and only a nullable member may be null. If
+// the fixtures decode but break invariants, the error is Violations.
 func Load(fsys fs.FS) (*Fixtures, error) {
 	f, err := decode(fsys)
 	if err != nil {
@@ -205,8 +205,8 @@ func decodeObject(data []byte, v any) error {
 }
 
 // members decodes a JSON object into its members. The object must have
-// exactly the members named in nullable, matched exactly, and a member may be
-// null only if nullable marks it true.
+// exactly the members named in nullable, each once and matched exactly, and a
+// member may be null only if nullable marks it true.
 func members(data []byte, nullable map[string]bool) (map[string]json.RawMessage, error) {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(data, &m); err != nil {
@@ -214,6 +214,9 @@ func members(data []byte, nullable map[string]bool) (map[string]json.RawMessage,
 	}
 	if m == nil {
 		return nil, fmt.Errorf("null, not an object")
+	}
+	if err := uniqueMembers(data); err != nil {
+		return nil, err
 	}
 	for _, name := range sortedKeys(m) {
 		if _, ok := nullable[name]; !ok {
@@ -230,6 +233,33 @@ func members(data []byte, nullable map[string]bool) (map[string]json.RawMessage,
 		}
 	}
 	return m, nil
+}
+
+// uniqueMembers reports a member name that occurs more than once in the JSON
+// object data. json.Unmarshal keeps only the last occurrence, so the
+// repetition would otherwise pass unnoticed.
+func uniqueMembers(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if _, err := dec.Token(); err != nil {
+		return err
+	}
+	seen := make(map[string]bool)
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		name, _ := tok.(string)
+		if seen[name] {
+			return fmt.Errorf("repeated member %q", name)
+		}
+		seen[name] = true
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func sortedKeys[V any](m map[string]V) []string {
