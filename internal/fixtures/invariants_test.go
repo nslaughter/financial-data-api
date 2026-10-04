@@ -380,6 +380,30 @@ func TestEveryViolationIsReported(t *testing.T) {
 	}
 }
 
+// TestEveryRepeatedSequenceIsReported checks that invariant 6 names a
+// repeated sequence even when a lower sequence separates it from its first
+// use. The change also breaks invariant 7, which this test ignores.
+func TestEveryRepeatedSequenceIsReported(t *testing.T) {
+	f := decodeEmbedded(t)
+	// Sequences 35, 36, 37 become 37, 36, 37.
+	f.Revisions[34].Sequence = f.Revisions[36].Sequence
+	var got []string
+	for _, v := range Check(f) {
+		if v.Rule == 6 {
+			got = append(got, v.Error())
+		}
+	}
+	want := []string{
+		`revisions.json: revisions[35] (revision_id "rev_aug26_1"): invariant 6: ` +
+			`sequence 36 is less than sequence 37 of revisions[34], which precedes it`,
+		`revisions.json: revisions[36] (revision_id "rev_aug26_2"): invariant 6: ` +
+			`sequence 37 repeats revisions[34]`,
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("invariant 6 reported:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
 func TestOutOfOrderComparesWithEveryLowerKey(t *testing.T) {
 	// Keys 1, 1, 2: the second item with key 1 is earlier than the first,
 	// which is allowed, but the item with key 2 is earlier than the first.

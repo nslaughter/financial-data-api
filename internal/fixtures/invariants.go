@@ -387,21 +387,33 @@ func (c *checker) monthlyPeriods() {
 }
 
 // Invariant 6: within a dataset, sequence starts at 1 or above, is unique,
-// and strictly increases in file order.
+// and strictly increases in file order. Each revision is compared with every
+// revision before it, not only its neighbour, so a repeat is found wherever
+// it occurs.
 func (c *checker) sequences() {
 	for _, revs := range c.datasetRevisions() {
+		first := make(map[int64]int, len(revs)) // sequence to the first revision with it
+		highest := revs[0]                      // the revision with the highest sequence so far
 		for k, i := range revs {
 			r := c.f.Revisions[i]
-			if k == 0 {
+			j, repeated := first[r.Sequence]
+			top := c.f.Revisions[highest]
+			switch {
+			case k == 0:
 				if r.Sequence < 1 {
 					c.addRevision(6, i, "sequence %d is below 1", r.Sequence)
 				}
-				continue
+			case repeated:
+				c.addRevision(6, i, "sequence %d repeats revisions[%d]", r.Sequence, j)
+			case r.Sequence < top.Sequence:
+				c.addRevision(6, i, "sequence %d is less than sequence %d of revisions[%d], which precedes it",
+					r.Sequence, top.Sequence, highest)
 			}
-			j := revs[k-1]
-			if prev := c.f.Revisions[j]; r.Sequence <= prev.Sequence {
-				c.addRevision(6, i, "sequence %d is not greater than sequence %d of revisions[%d], which precedes it",
-					r.Sequence, prev.Sequence, j)
+			if !repeated {
+				first[r.Sequence] = i
+			}
+			if r.Sequence > top.Sequence {
+				highest = i
 			}
 		}
 	}
