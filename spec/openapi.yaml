@@ -40,6 +40,9 @@ info:
       `null`. Clients ignore response fields they do not recognize.
     - The server's current time is a simulated clock. Revisions whose
       `available_at` is after the clock are invisible on every customer path.
+      The clock is never later than `9999-12-30T23:59:59Z`, so that an
+      export's `expires_at` and a query's `snapshot_expires_at` still fit the
+      timestamp format.
 servers:
   - url: http://localhost:8080
     description: The demo API container on its default port.
@@ -573,7 +576,8 @@ paths:
       description: |
         Revisions whose `available_at` the clock passes become visible at once,
         in `sequence` order, and expiry is evaluated against the new time. The
-        current time is accepted and changes nothing.
+        current time is accepted and changes nothing. A `now` later than
+        `9999-12-30T23:59:59Z` returns `400 invalid_parameter`.
       security:
         - testControlKey: []
       requestBody:
@@ -592,7 +596,7 @@ paths:
                 $ref: '#/components/schemas/Clock'
         '400':
           $ref: '#/components/responses/BadRequest'
-          description: '`unknown_parameter`, `missing_parameter`, `invalid_parameter`.'
+          description: '`unknown_parameter`, `missing_parameter`, `invalid_parameter` (including a `now` later than `9999-12-30T23:59:59Z`).'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '404':
@@ -611,7 +615,8 @@ paths:
       summary: Return the server to its startup state
       description: |
         Sets the clock to `clock`, or to `CLOCK_START` when absent; any valid
-        timestamp is accepted, including one earlier than the current clock.
+        timestamp up to `9999-12-30T23:59:59Z` is accepted, including one
+        earlier than the current clock.
         Restores every credential from the fixture, deletes every export, and
         replaces the page-token signing key. Positions held by clients are not
         invalidated.
@@ -633,7 +638,7 @@ paths:
                 $ref: '#/components/schemas/Clock'
         '400':
           $ref: '#/components/responses/BadRequest'
-          description: '`unknown_parameter`, `invalid_parameter`.'
+          description: '`unknown_parameter`, `invalid_parameter` (including a `clock` later than `9999-12-30T23:59:59Z`).'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '404':
@@ -1274,12 +1279,14 @@ components:
       properties:
         now:
           $ref: '#/components/schemas/Timestamp'
+          description: The new clock, no later than `9999-12-30T23:59:59Z`.
     ResetRequest:
       type: object
       additionalProperties: false
       properties:
         clock:
           $ref: '#/components/schemas/Timestamp'
+          description: The clock after the reset, no later than `9999-12-30T23:59:59Z`.
     CredentialUpdate:
       type: object
       additionalProperties: false

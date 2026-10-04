@@ -114,7 +114,8 @@ Out of scope: running against the real server; nothing serves the API yet.
 ### 4. Serve the foundation: routing, errors, the clock, authentication, test control, and the catalog
 
 - Read `PORT`, `CLOCK_START`, `TEST_CONTROL`, and `FIXTURES_DIR`. Refuse to
-  start on invalid values or failed invariants.
+  start on invalid values, including a `CLOCK_START` later than
+  `9999-12-30T23:59:59Z`, or failed invariants.
 - Implement routing, using the error order in
   [Errors](../spec/api.md#errors):
   - `404 unsupported_api_version`;
@@ -132,10 +133,16 @@ Out of scope: running against the real server; nothing serves the API yet.
 - Implement authentication for both credential kinds, with
   `WWW-Authenticate` on every 401.
 - Implement every `/test` endpoint, served only when `TEST_CONTROL=enabled`.
+  `PUT /test/clock` and `POST /test/reset` refuse a clock later than
+  `9999-12-30T23:59:59Z` with `400 invalid_parameter`; `simulated-clock`
+  checks both from step 6.
 - Implement `GET /v1/meta` and the catalog endpoints: datasets and series,
   with `entitled` and `head_position`.
-- Tests: `httptest` tests for routing, error bodies and order, parsing,
-  authentication, and test control.
+- Tests:
+  - `httptest` tests for routing, error bodies and order, parsing,
+    authentication, and test control;
+  - the server refuses to start with a `CLOCK_START` later than
+    `9999-12-30T23:59:59Z`.
 
 Out of scope: observations, pagination, and the change stream.
 

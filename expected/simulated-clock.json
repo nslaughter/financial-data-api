@@ -71,6 +71,20 @@
       "reason": "PUT /test/clock only moves forward, and the refusal names now; the current time is accepted and changes nothing."
     },
     {
+      "name": "the clock moves to its latest value and no further",
+      "steps": [
+        {
+          "request": {"method": "PUT", "path": "/test/clock", "credential": "cred_test_control", "body": {"now": "9999-12-31T00:00:00Z"}},
+          "expect": {"status": 400, "code": "invalid_parameter", "body": {"parameter": "now"}}
+        },
+        {
+          "request": {"method": "PUT", "path": "/test/clock", "credential": "cred_test_control", "body": {"now": "9999-12-30T23:59:59Z"}},
+          "expect": {"status": 200, "body": {"now": "9999-12-30T23:59:59Z"}}
+        }
+      ],
+      "reason": "9999-12-30T23:59:59Z is the latest clock: an export created then expires at 9999-12-31T23:59:59Z, the last instant the timestamp format can express. One second later is refused as an invalid now."
+    },
+    {
       "name": "a reset without a clock restores the start",
       "clock": "2026-09-10T12:30:20Z",
       "steps": [
@@ -94,6 +108,20 @@
         {"request": {"path": "/v1/datasets/core-indicators"}, "expect": {"status": 200, "body": {"head_position": 17}}}
       ],
       "reason": "One second before the May 2025 withdrawal becomes available, the head position is 17 and the initial release is current."
+    },
+    {
+      "name": "a reset accepts the latest clock and no later",
+      "steps": [
+        {
+          "request": {"method": "POST", "path": "/test/reset", "credential": "cred_test_control", "body": {"clock": "9999-12-31T00:00:00Z"}},
+          "expect": {"status": 400, "code": "invalid_parameter", "body": {"parameter": "clock"}}
+        },
+        {
+          "request": {"method": "POST", "path": "/test/reset", "credential": "cred_test_control", "body": {"clock": "9999-12-30T23:59:59Z"}},
+          "expect": {"status": 200, "body": {"now": "9999-12-30T23:59:59Z"}}
+        }
+      ],
+      "reason": "A reset may move the clock anywhere up to 9999-12-30T23:59:59Z, the latest clock whose derived timestamps fit the timestamp format. One second later is refused as an invalid clock."
     },
     {
       "name": "before the first revision",

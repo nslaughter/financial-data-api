@@ -43,7 +43,7 @@ contract version built in. It reads these environment variables:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `PORT` | `8080` | TCP port for HTTP. |
-| `CLOCK_START` | `2026-10-01T00:00:00Z` | The simulated clock at startup and after a reset without a clock. Must be a timestamp in the format below. |
+| `CLOCK_START` | `2026-10-01T00:00:00Z` | The simulated clock at startup and after a reset without a clock. Must be a timestamp in the format below, no later than `9999-12-30T23:59:59Z` (see [Simulated clock](#simulated-clock)); otherwise the server refuses to start. |
 | `TEST_CONTROL` | `disabled` | `enabled` serves the `/test` endpoints, and `disabled` does not. Any other value is refused at startup. |
 | `FIXTURES_DIR` | the fixtures built into the image | Directory containing the files from `fixtures/`. |
 
@@ -243,6 +243,14 @@ purpose:
 The clock starts at `CLOCK_START` and does not advance by itself. Only
 `PUT /test/clock` moves it forward, and only `POST /test/reset` moves it
 anywhere else. A request reads the clock once and uses that value throughout.
+
+The clock is never later than `9999-12-30T23:59:59Z`, the latest instant
+whose derived timestamps still fit the timestamp format: an export's
+`expires_at` is the clock plus 86,400 seconds, and a query's
+`snapshot_expires_at` is the clock plus 3,600 seconds. A server whose
+`CLOCK_START` is later refuses to start, and a later `now` for
+`PUT /test/clock` or `clock` for `POST /test/reset` returns
+`400 invalid_parameter` naming that field.
 
 ### Positions and snapshots
 
@@ -636,9 +644,10 @@ Returns the clock: `{"now": "2026-10-01T00:00:00Z"}`.
 ### `PUT /test/clock`
 
 Moves the clock forward. Body: `{"now": "<timestamp>"}`. `now` is required.
-A time before the current clock returns `409 clock_backwards`; the current
-time is accepted and changes nothing. Returns the new clock, as for
-`GET /test/clock`.
+A time later than `9999-12-30T23:59:59Z` returns `400 invalid_parameter`
+naming `now`. A time before the current clock returns `409 clock_backwards`;
+the current time is accepted and changes nothing. Returns the new clock, as
+for `GET /test/clock`.
 
 Revisions whose `available_at` the clock passes become visible at once, in
 `sequence` order, and expiry is evaluated against the new time.
@@ -646,8 +655,9 @@ Revisions whose `available_at` the clock passes become visible at once, in
 ### `POST /test/reset`
 
 Returns the server to its startup state, with an optional different clock.
-Body: empty, `{}`, or `{"clock": "<timestamp>"}`. Any valid timestamp is
-accepted, including one earlier than the current clock. The reset:
+Body: empty, `{}`, or `{"clock": "<timestamp>"}`. Any valid timestamp up to
+`9999-12-30T23:59:59Z` is accepted, including one earlier than the current
+clock; a later one returns `400 invalid_parameter` naming `clock`. The reset:
 
 - sets the clock to `clock`, or to `CLOCK_START` when absent;
 - restores every credential from the fixture;

@@ -393,7 +393,7 @@ contract version.
 | [`provider-correction.json`](../expected/provider-correction.json) | The value as served before a correction, and the time fields the correction keeps |
 | [`late-source-release.json`](../expected/late-source-release.json) | No value at the usual time, then the late release |
 | [`change-stream.json`](../expected/change-stream.json) | Positions for given times, reads after a position, applying events by precedence, retention, and a position ahead of the stream |
-| [`simulated-clock.json`](../expected/simulated-clock.json) | Revisions after the clock are invisible; moving the clock reveals them; resetting restores the start |
+| [`simulated-clock.json`](../expected/simulated-clock.json) | Revisions after the clock are invisible; moving the clock reveals them; resetting restores the start; the latest clock is accepted and a later one refused |
 | [`pagination.json`](../expected/pagination.json) | Pages keep their snapshot while data changes, tokens are bound to their query and credential, and snapshots expire |
 | [`access-control.json`](../expected/access-control.json) | Missing, unknown, and revoked keys; refusals without entitlement, including on resumed pages; an empty result distinct from a refusal |
 | [`request-errors.json`](../expected/request-errors.json) | Unknown, missing, and malformed parameters and bodies, period ranges, cutoffs after the clock, unsupported versions, and the order in which errors are reported |
