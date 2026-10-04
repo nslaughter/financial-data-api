@@ -4,8 +4,9 @@
 describes no real economy, source, or provider.
 
 This contract defines the dataset shared by the provider demonstration: the
-[financial-data-sdk](https://github.com/nslaughter/financial-data-sdk), this
-API, the
+[Python](https://github.com/nslaughter/financial-data-sdk-python),
+[Go](https://github.com/nslaughter/financial-data-sdk-go), and
+[TypeScript](https://github.com/nslaughter/financial-data-sdk-ts) SDKs, this API, the
 [financial-data-api-monitor](https://github.com/nslaughter/financial-data-api-monitor),
 and the later migration example. It specifies what the records mean. The
 fixtures in [`fixtures/`](../fixtures) implement it, and
@@ -280,12 +281,37 @@ contract version.
 | [`change-stream.json`](../expected/change-stream.json) | Positions for given times, reads after a position, and applying events by precedence |
 | [`export-handoff.json`](../expected/export-handoff.json) | Loading a snapshot and its position without losing a revision, compared with the two ways to lose it |
 
+## Implementations and conformance
+
+| Repository | Language | Role | Stage |
+| --- | --- | --- | --- |
+| [financial-data-api](https://github.com/nslaughter/financial-data-api) | Go | Serves the fixtures: the demo API in stage 1, expanded into the full API in stage 2 | 1 |
+| [financial-data-sdk-python](https://github.com/nslaughter/financial-data-sdk-python) | Python | The research client and the first showcase | 1 |
+| [financial-data-sdk-go](https://github.com/nslaughter/financial-data-sdk-go) | Go | The same client for Go | 1, after Python |
+| [financial-data-sdk-ts](https://github.com/nslaughter/financial-data-sdk-ts) | TypeScript | The same client for TypeScript | 1, after Python |
+| [financial-data-api-monitor](https://github.com/nslaughter/financial-data-api-monitor) | Go | Scheduled checks with ordinary customer access | 3 |
+
+The demo API lives in this repository from the first stage and is published as
+a container image. Each image release states the contract version it
+implements. The SDKs and the monitor pin an image tag, and their CI runs the
+`expected/` checks for that contract version against it. The expected results
+therefore act as one conformance suite: every SDK must return the same records
+for the same queries, whatever its language.
+
+Not every check applies from the first stage:
+
+| Expected files | Required from |
+| --- | --- |
+| `august-2026-at-cutoffs`, `full-history`, `missing-value`, `withdrawal-and-rerelease`, `out-of-order-arrival`, `provider-correction`, `late-source-release`, `change-stream` | Stage 1: the demo API and every SDK |
+| `published-as-of`, `export-handoff` | Stage 2: the full API, and each SDK when it adds those features |
+| `release-timing` | Stage 3: the monitor |
+
 ## Versioning
 
 The contract, fixtures, and expected results are versioned together. Each
 file records `contract_version`. Once this draft is approved, it will be
-tagged `contract-v0.1.0`; the SDK, the demo API, and the monitor each pin a
-tag. Any change to a fixture or an expected result gets a new version, which
+tagged `contract-v0.1.0`; the SDKs, the demo API image, and the monitor each
+pin a tag. Any change to a fixture or an expected result gets a new version, which
 consumers adopt deliberately.
 
 ## Decisions
@@ -324,6 +350,13 @@ These decisions were settled on October 4, 2026:
     the source's history with the provider's current processing, not the
     values the provider held at `T`. A query takes one cutoff, not both, and
     the stage 1 demo API omits this one.
+11. **The demo API lives in this repository and ships as a container image.**
+    The SDKs are tested against behavior they didn't define, the fixtures stay
+    beside the service that serves them, and the second stage grows the same
+    service instead of moving it.
+12. **The API and the monitor are written in Go; the SDKs in Python, Go, and
+    TypeScript.** The Python SDK comes first, and the other two cover the same
+    workflow and pass the same checks.
 
 ## Open questions
 
@@ -331,7 +364,5 @@ These decisions were settled on October 4, 2026:
   ambiguous `date` field with explicit time fields, but this contract uses the
   explicit fields from the start. Either the migration starts from a legacy
   representation created for the exercise, or stage 4 needs a different
-  change.
-- **Where the stage 1 demo API lives.** The SDK repository's README currently
-  places it there. Serving these fixtures from this repository instead would
-  make the SDK an external customer from the start.
+  change. Whether the migration covers all three SDKs or only Python is part
+  of the same decision.

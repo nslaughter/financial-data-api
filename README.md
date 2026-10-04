@@ -12,8 +12,10 @@ meaning and delivery behavior customers can depend on.
 **Status:** Project brief. This repository contains this README and a draft
 [data contract](spec/data-contract.md) with its fixtures and expected results.
 The API, deployment, and runnable demonstrations are planned; nothing described
-here has been implemented or tested yet. The dataset is synthetic,
-and this is a demonstration project, not client work.
+here has been implemented or tested yet. The API will be written in Go, and the
+demo API that the SDKs use from the first stage will ship from here as a
+container image. The dataset is synthetic, and this is a demonstration project,
+not client work.
 
 ## What this project demonstrates
 
@@ -37,15 +39,18 @@ dataset once, keep it current, and reproduce earlier research:
   during the export cannot fall between them.
 - **Access enforced on every path.** Entitlements are checked on queries,
   resumed pages, and exports.
-- **A working customer.** The
-  [financial-data-sdk](https://github.com/nslaughter/financial-data-sdk)
-  keeps running against the API as it grows.
+- **Working customers.** The [Python](https://github.com/nslaughter/financial-data-sdk-python),
+  [Go](https://github.com/nslaughter/financial-data-sdk-go), and
+  [TypeScript](https://github.com/nslaughter/financial-data-sdk-ts) SDKs
+  keep running against the API as it grows, and all three pass the same
+  contract checks.
 
 The API is the second of four stages in a demonstration for financial data
-providers. It expands the small demo API in the SDK repository, and the
+providers. The small demo API the SDKs use in the first stage lives here from
+the start and grows into the full API in the second stage, and the
 [financial-data-api-monitor](https://github.com/nslaughter/financial-data-api-monitor)
 then checks what customers can retrieve from it. A final stage makes a
-deliberate contract change to the API and SDK.
+deliberate contract change to the API and SDKs.
 
 ## A customer can make successful requests and still have the wrong dataset
 
@@ -180,8 +185,10 @@ runs locally against synthetic data and makes no performance or scale claims.
 
 ## Related projects and writing
 
-- [financial-data-sdk](https://github.com/nslaughter/financial-data-sdk):
-  the Python client that acts as this API's customer.
+- [financial-data-sdk-python](https://github.com/nslaughter/financial-data-sdk-python),
+  [financial-data-sdk-go](https://github.com/nslaughter/financial-data-sdk-go), and
+  [financial-data-sdk-ts](https://github.com/nslaughter/financial-data-sdk-ts):
+  the clients that act as this API's customers.
 - [financial-data-api-monitor](https://github.com/nslaughter/financial-data-api-monitor):
   scheduled checks of what customers retrieve from this API.
 - *Turning a financial dataset into a dependable API* and *The timestamps that
