@@ -616,8 +616,17 @@ canonical form so that every implementation produces the same bytes:
   [revision records](data-contract.md#revision-records) table, starting with
   `sequence` and ending with `available_at`;
 - no whitespace outside strings;
-- strings escape only `"`, `\`, and control characters, and are UTF-8;
-  characters such as `<`, `>`, and `&` are not escaped;
+- strings are UTF-8 and are escaped exactly as Go 1.22 and later
+  `encoding/json` escapes them with `SetEscapeHTML(false)`, where a control
+  character is one from U+0000 to U+001F:
+  - `"` as `\"`, and `\` as `\\`;
+  - the control characters U+0008, U+000C, U+000A, U+000D, and U+0009 as
+    `\b`, `\f`, `\n`, `\r`, and `\t`;
+  - every other control character as `\u00xx`, with lowercase hexadecimal
+    digits, such as `\u001b`;
+  - U+2028 and U+2029 as `\u2028` and `\u2029`;
+  - every other character, including U+007F, U+0080 to U+009F, `<`, `>`, and
+    `&`, unescaped;
 - every record, including the last, ends with a single `\n`, and an empty
   snapshot is an empty file.
 

@@ -504,9 +504,15 @@ paths:
         Every download returns identical bytes, whose length and SHA-256 digest
         match the manifest. The file has one revision record per line, ordered
         by `sequence`, in the canonical form defined in `api.md`: the 14 fields
-        in contract order, no whitespace outside strings, only `"`, `\`, and
-        control characters escaped, and a single `\n` after every record. The
-        same checks apply as for the manifest, at the time of the download.
+        in contract order, no whitespace outside strings, strings escaped as Go
+        1.22 and later `encoding/json` escapes them with `SetEscapeHTML(false)`,
+        and a single `\n` after every record. A string escapes `"` as `\"`, `\`
+        as `\\`, U+0008, U+000C, U+000A, U+000D, and U+0009 as `\b`, `\f`,
+        `\n`, `\r`, and `\t`, the other characters from U+0000 to U+001F as
+        `\u00xx` in lowercase hexadecimal, and U+2028 and U+2029 as `\u2028`
+        and `\u2029`; every other character, including U+007F to U+009F, is
+        written unescaped in UTF-8. The same checks apply as for the manifest,
+        at the time of the download.
       parameters:
         - $ref: '#/components/parameters/ExportIdPath'
         - $ref: '#/components/parameters/FileNamePath'

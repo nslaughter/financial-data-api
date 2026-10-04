@@ -45,7 +45,8 @@ The README describes the project for people; it is not a specification.
   float.
 - Export files use the canonical form in `spec/api.md`: in Go, an encoder with
   `SetEscapeHTML(false)`, the struct fields in contract order, and one record
-  per line.
+  per line. The recipe needs Go 1.22 or later; earlier versions write `\b` and
+  `\f` as `\u0008` and `\u000c`.
 - Every error is `application/problem+json`, including routing errors, so do
   not let `net/http` write its default 404 or 405 bodies.
 - All time comes from the simulated clock. Do not call `time.Now()` outside

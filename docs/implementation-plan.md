@@ -51,9 +51,10 @@ A pull request may refine this layout if it explains why.
 
 ### 1. Load the fixtures and enforce the invariants
 
-- Create the Go module `github.com/nslaughter/financial-data-api` and a CI
-  workflow that runs `gofmt` (failing on unformatted files), `go vet ./...`,
-  and `go test ./...`.
+- Create the Go module `github.com/nslaughter/financial-data-api`, requiring
+  Go 1.22 or later as the canonical export form does, and a CI workflow that
+  runs `gofmt` (failing on unformatted files), `go vet ./...`, and
+  `go test ./...`.
 - Embed the fixtures and load them into typed records. Nullable fields
   (`value`, `missing_reason`) are pointers, not empty strings.
 - Implement all 15 [invariants](../spec/data-contract.md#invariants). A
@@ -77,6 +78,10 @@ Out of scope: HTTP, the clock, and any query logic.
   - `position_checks` and `read_checks` in `change-stream.json`;
   - the two export digests in [`spec/api.md`](../spec/api.md#exports).
   The tests read the files from `expected/`; they do not copy their values.
+- A test checks the canonical form's string escaping, which the fixtures do
+  not exercise: strings containing `"`, `\`, every character from U+0000 to
+  U+001F, U+007F, U+0080 to U+009F, U+2028, U+2029, `<`, `>`, and `&` encode
+  as [`spec/api.md`](../spec/api.md#exports) specifies.
 
 Out of scope: HTTP, parameters, errors, and tokens.
 
