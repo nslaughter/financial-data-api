@@ -143,6 +143,20 @@
       "reason": "Either bound may be omitted. When both are given, period_start must be before period_end."
     },
     {
+      "name": "a period filter matches only periods within the range",
+      "steps": [
+        {
+          "request": {"path": "/v1/observations", "query": {"series_id": "activity-index", "period_start": "2026-07-15", "period_end": "2026-09-01"}},
+          "expect": {"status": 200, "body": {"data": [{"observation_id": "obs_aug26", "revision_id": "rev_aug26_2"}]}}
+        },
+        {
+          "request": {"path": "/v1/observations", "query": {"series_id": "activity-index", "period_start": "2026-07-01", "period_end": "2026-08-15"}},
+          "expect": {"status": 200, "body": {"data": [{"observation_id": "obs_jul26", "revision_id": "rev_jul26_1"}]}}
+        }
+      ],
+      "reason": "An observation is included only when its whole period lies within the range. July 2026 starts before 2026-07-15 and August 2026 ends after 2026-08-15, so each is excluded by the bound it crosses; overlap matching would return both."
+    },
+    {
       "name": "a cutoff may equal the clock but not pass it",
       "steps": [
         {

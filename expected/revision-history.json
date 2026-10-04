@@ -105,6 +105,20 @@
       "reason": "The value the API served in error remains, so the history explains what earlier research received."
     },
     {
+      "name": "a period filter matches only periods within the range",
+      "steps": [
+        {
+          "request": {"path": "/v1/revisions", "query": {"series_id": "activity-index", "period_start": "2026-07-15", "period_end": "2026-09-01"}},
+          "expect": {"status": 200, "body": {"data": [{"revision_id": "rev_aug26_1"}, {"revision_id": "rev_aug26_2"}]}}
+        },
+        {
+          "request": {"path": "/v1/revisions", "query": {"series_id": "activity-index", "period_start": "2026-07-01", "period_end": "2026-08-15"}},
+          "expect": {"status": 200, "body": {"data": [{"revision_id": "rev_jul26_1"}]}}
+        }
+      ],
+      "reason": "The revision history filters periods as observations do: an observation's revisions are included only when its whole period lies within the range. Overlap matching would add rev_jul26_1 to the first result and both August revisions to the second."
+    },
+    {
       "name": "the whole history in pages of ten",
       "steps": [
         {
