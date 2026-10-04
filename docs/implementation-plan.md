@@ -21,7 +21,7 @@ start until the operator records the decision here.
 
 | Step | Status | Pull request |
 | --- | --- | --- |
-| 1. Load the fixtures and enforce the invariants | Not started | |
+| 1. Load the fixtures and enforce the invariants | Done | |
 | 2. Implement the data rules | Not started | |
 | 3. Build the conformance runner | Not started | |
 | 4. Serve the foundation | Not started | |
