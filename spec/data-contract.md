@@ -401,7 +401,7 @@ contract version.
 | [`revision-history.json`](../expected/revision-history.json) | Every revision of an observation, including superseded and erroneous ones |
 | [`release-calendar.json`](../expected/release-calendar.json) | Scheduled release times |
 | [`export-handoff.json`](../expected/export-handoff.json) | Loading a snapshot and its position without losing a revision, compared with the two ways to lose it |
-| [`exports.json`](../expected/exports.json) | Repeatable downloads, regeneration, expiry, and protection of export files |
+| [`exports.json`](../expected/exports.json) | Repeatable downloads, regeneration, identifiers that are never reused, expiry, and protection of export files |
 | [`release-timing.json`](../expected/release-timing.json) | Source delay and availability delay for on-time, late-source, and late-provider releases |
 
 ## Implementations and conformance
