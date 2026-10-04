@@ -533,8 +533,9 @@ The operator reviewed and settled these for version 0.2.0 on October 4, 2026:
     fixture history at the default clock, and expiry is tested by moving the
     clock, so there is no settings endpoint.
 22. **Only a reset moves the clock backwards.** `PUT /test/clock` moves it
-    forward only; `POST /test/reset` may set any clock, and it discards page
-    tokens and exports so that no state from a later time survives.
+    forward only; `POST /test/reset` may set any clock up to the limit in
+    decision 26, and it discards page tokens and exports so that no state
+    from a later time survives.
 23. **A resumed page repeats every parameter of the first request,**
     including `page_size`, and leaves omitted parameters omitted. Any
     difference is refused, so a resumed page cannot drop a cutoff.
@@ -545,6 +546,43 @@ The operator reviewed and settled these for version 0.2.0 on October 4, 2026:
 25. **The release calendar ignores the simulated clock.** It is a plan
     published in advance, and a monitor needs upcoming releases to know what
     is due.
+
+The operator reviewed and settled these for version 0.3.0 on October 4, 2026:
+
+26. **The simulated clock is never later than `9999-12-30T23:59:59Z`.** It is
+    the latest instant whose derived timestamps still fit the four-digit-year
+    timestamp format: an export created then expires at
+    `9999-12-31T23:59:59Z`. `PUT /test/clock` and `POST /test/reset` refuse a
+    later `now` or `clock` with `400 invalid_parameter`, and a server whose
+    `CLOCK_START` is later refuses to start.
+27. **A scenario can be limited to the stages it lists.** The conformance
+    files are cumulative, so without the `stages` member no check could show
+    that a stage 1 server refuses `published_as_of` and the stage 2 paths
+    without failing every stage 2 server. SDK runners honor it like the API
+    runner.
+28. **An export identifier carries at least 64 bits from a cryptographically
+    secure random source.** Lookup comes before entitlement, so a key without
+    entitlement can tell an existing export from an unknown one; random
+    identifiers keep it from finding exports by guessing. The error order,
+    the `403` checks in `exports`, and decision 18 stay as they are.
+29. **SDK runners run the query, position, read, and apply checks and the
+    scenarios.** They use the SDK's own methods, or HTTP where the SDK has
+    none, so every SDK shows from stage 1 that it reads the change stream
+    correctly. They leave release timing to the monitor.
+30. **Export strings are escaped as Go 1.22 and later `encoding/json` escapes
+    them with `SetEscapeHTML(false)`.** One exact rule gives every
+    implementation the same bytes, and Go's standard encoder produces them
+    without a custom writer. Control characters are U+0000 to U+001F only, so
+    U+007F and U+0080 to U+009F are written as UTF-8.
+31. **An environment variable set to an empty value is treated as unset.** Its
+    default applies, for `PORT`, `CLOCK_START`, `TEST_CONTROL`, and
+    `FIXTURES_DIR` alike, so clearing a variable has the same effect as
+    leaving it out.
+32. **A `GET` sent with a body is checked by the server's own tests, not by
+    the conformance files.** Fetch-based clients, such as one a TypeScript
+    runner would use, refuse to send a body with `GET`. Plan step 4 tests
+    with `httptest` that such a request, even with a body that is not a JSON
+    object, is answered as if it had none.
 
 ## Open questions
 
