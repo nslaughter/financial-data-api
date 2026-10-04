@@ -609,7 +609,8 @@ canonical form so that every implementation produces the same bytes:
 - every record, including the last, ends with a single `\n`, and an empty
   snapshot is an empty file.
 
-The first line of every export of the fixture dataset is:
+The first line of every export of the fixture dataset at position 1 or later
+is:
 
 ```text
 {"sequence":1,"series_id":"activity-index","observation_id":"obs_jan24","revision_id":"rev_jan24_1","revision_number":1,"change_type":"initial_release","period_start":"2024-01-01","period_end":"2024-02-01","value":"97.1","missing_reason":null,"unit":"index_points","published_at":"2024-02-03T12:30:00Z","received_at":"2024-02-03T12:30:04Z","available_at":"2024-02-03T12:31:10Z"}
