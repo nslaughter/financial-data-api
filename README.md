@@ -26,8 +26,9 @@ dataset once, keep it current, and reproduce earlier research:
   version used in earlier work.
 - **Explicit time semantics.** Observation periods, source publication times,
   and customer availability times are separate fields with documented meanings.
-- **Historical queries.** A cutoff parameter returns the versions an entitled
-  customer could retrieve at that time.
+- **Historical queries.** One cutoff returns the versions an entitled customer
+  could retrieve at that time. A second reconstructs what the source had
+  published by then, with the provider's processing errors corrected.
 - **Pagination that cannot mix states.** Continuation tokens are bound to the
   original snapshot, filters, API version, and position. An expired snapshot
   requires a restart.

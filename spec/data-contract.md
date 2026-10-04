@@ -19,7 +19,8 @@ This document covers:
 - the series catalog;
 - revision records, their identities, and their time fields;
 - values and missing data;
-- the rule for selecting the revision available at a cutoff;
+- the rules for selecting the revision available at a cutoff, and the revision
+  the source had published by a cutoff;
 - the order of the change stream;
 - the release calendar;
 - the fixture timeline and the expected results.
@@ -134,7 +135,8 @@ served.
 
 ## Selecting the revision available at a cutoff
 
-For a cutoff `T` and a period range from `start` up to `end`:
+This is the `available_as_of` cutoff. For a cutoff `T` and a period range from
+`start` up to `end`:
 
 1. Consider the observations whose period lies within the range:
    `period_start` ≥ `start` and `period_end` ≤ `end`.
@@ -157,6 +159,44 @@ exercises that case.
 The result describes what an entitled customer could retrieve at `T`.
 Revisions served in error remain in the history, so a cutoff before a provider
 correction returns the value that was actually served.
+
+## Reconstructing what the source had published
+
+The `published_as_of` cutoff answers a different question: which values had
+the source published by `T`, with the provider's processing errors corrected?
+It uses the same rule with `published_at` in place of `available_at`:
+
+1. Consider the observations whose period lies within the range, as above.
+2. For each observation, take its revisions with `published_at` ≤ `T`. The
+   boundary is inclusive.
+3. Select the revision with the highest `revision_number` among them.
+4. Omit the observation if there is none or the selected revision is a
+   `withdrawal`; otherwise return the selected revision.
+5. Order the results by `period_start`, ascending.
+
+A provider correction keeps the `published_at` of the value it corrects, so
+this query applies corrections whenever they were made. On March 4, 2026, it
+returns February as 101.3, while `available_as_of` returns the 1.013 the API
+actually served. It also ignores the provider's delays. At 13:00 on December 3,
+2025, it returns November's 100.0, which no customer could retrieve until the
+next day.
+
+The two cutoffs answer different research needs. Use `available_as_of` to
+reproduce what a customer could have used. Use `published_as_of` to study the
+source's own history, as with a publisher's archive of past releases. A query
+uses at most one of them. Without either, the query returns the latest
+revision of each observation.
+
+The result has two limits:
+
+- It covers only versions the provider received. If the provider began
+  collecting after the source began publishing, the earlier versions are
+  missing, and this query cannot recover them.
+- It describes the source, not delivery. It does not establish that any
+  customer could retrieve the result at `T`.
+
+The stage 1 demo API implements only `available_as_of`. The full API
+implements both.
 
 ## Change stream
 
@@ -225,6 +265,7 @@ contract version.
 | [`withdrawal-and-rerelease.json`](../expected/withdrawal-and-rerelease.json) | An observation absent while withdrawn, then re-released |
 | [`out-of-order-arrival.json`](../expected/out-of-order-arrival.json) | A revision that supersedes a release delivered after it |
 | [`provider-correction.json`](../expected/provider-correction.json) | The value as served before a correction, and the time fields the correction keeps |
+| [`published-as-of.json`](../expected/published-as-of.json) | What the source had published by each cutoff, compared with what the API was serving at the same instant |
 | [`late-source-release.json`](../expected/late-source-release.json) | No value at the usual time, then the late release |
 | [`release-timing.json`](../expected/release-timing.json) | Source delay and availability delay for on-time, late-source, and late-provider releases |
 | [`change-stream.json`](../expected/change-stream.json) | Positions for given times, reads after a position, and applying events by precedence |
@@ -248,10 +289,15 @@ These choices are proposals in this draft:
 2. **Precedence uses a per-observation `revision_number`.** This handles a
    revision delivered before the release it revises. Version 0.1 doesn't
    define how a provider correction is numbered if the source has already
-   revised the value it corrects; no fixture exercises that case.
+   revised the value it corrects; no fixture exercises that case. Both
+   cutoffs depend on the answer: if such a correction were numbered above the
+   source's revision, either query would return the corrected old value
+   instead of the revision.
 3. **A provider correction keeps the corrected value's `published_at` and
-   `received_at`.**
-4. **The cutoff boundary is inclusive**: `available_at` ≤ `T`.
+   `received_at`.** This is what lets `published_as_of` apply corrections;
+   reversing it would break that query.
+4. **Both cutoff boundaries are inclusive**: `available_at` ≤ `T`, or
+   `published_at` ≤ `T`.
 5. **`available_at` values can tie.** `sequence` orders revisions that share
    one, and positions are sequence numbers, not timestamps.
 6. **A null value requires a `missing_reason`; a withdrawal has neither.**
@@ -262,6 +308,10 @@ These choices are proposals in this draft:
    when the monitor needs to check entitlement differences between datasets.
 9. **Period filters match observations that fall entirely within the range.**
    Overlap matching is unnecessary while every series is monthly.
+10. **`published_as_of` applies corrections made after `T`.** It reconstructs
+    the source's history with the provider's current processing, not the
+    values the provider held at `T`. A query takes one cutoff, not both, and
+    the stage 1 demo API omits this one.
 
 ## Open questions
 
