@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.1.0",
+  "contract_version": "0.2.0",
   "case": "provider-correction",
   "description": "The provider divided the source's February 2026 value by one hundred in error and served 1.013. It corrected the value to the source's 101.3 on March 5. A cutoff before the correction returns what the API actually served.",
   "checks": [

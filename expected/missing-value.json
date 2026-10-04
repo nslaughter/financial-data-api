@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.1.0",
+  "contract_version": "0.2.0",
   "case": "missing-value",
   "description": "The source released October 2024 without a value because the data was not collected. A null value with a reason is an observation; it differs from an absent observation.",
   "checks": [

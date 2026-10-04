@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.1.0",
+  "contract_version": "0.2.0",
   "case": "published-as-of",
   "description": "What the source had published by each cutoff, with the provider's processing errors corrected. Each check also gives contrast_available_as_of: the result of the available_as_of query at the same instant, which describes what a customer could retrieve.",
   "checks": [
@@ -109,6 +109,122 @@
       ],
       "contrast_available_as_of": [],
       "reason": "The source published the period without a value at 12:30:00; it was available at 12:31:10."
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "both cutoffs are refused",
+      "steps": [
+        {
+          "request": {
+            "path": "/v1/observations",
+            "query": {
+              "series_id": "activity-index",
+              "period_start": "2026-02-01",
+              "period_end": "2026-03-01",
+              "available_as_of": "2026-03-04T00:00:00Z",
+              "published_as_of": "2026-03-04T00:00:00Z"
+            }
+          },
+          "expect": {"status": 400, "code": "conflicting_cutoffs", "body": {"parameter": null}}
+        }
+      ],
+      "reason": "A query takes at most one cutoff. The error names no single parameter."
+    },
+    {
+      "name": "a published_as_of after the clock is refused",
+      "steps": [
+        {
+          "request": {
+            "path": "/v1/observations",
+            "query": {
+              "series_id": "activity-index",
+              "period_start": "2026-02-01",
+              "period_end": "2026-03-01",
+              "published_as_of": "2026-10-01T00:00:01Z"
+            }
+          },
+          "expect": {"status": 400, "code": "cutoff_in_future", "body": {"parameter": "published_as_of"}}
+        }
+      ],
+      "reason": "The default clock is 2026-10-01T00:00:00Z."
+    },
+    {
+      "name": "a correction not yet made is not applied",
+      "clock": "2026-03-04T00:00:00Z",
+      "steps": [
+        {
+          "request": {
+            "path": "/v1/observations",
+            "query": {
+              "series_id": "activity-index",
+              "period_start": "2026-02-01",
+              "period_end": "2026-03-01",
+              "published_as_of": "2026-03-04T00:00:00Z"
+            }
+          },
+          "expect": {"status": 200, "body": {"data": [{"revision_id": "rev_feb26_1", "value": "1.013"}]}}
+        },
+        {"set_clock": "2026-03-05T15:20:00Z"},
+        {
+          "request": {
+            "path": "/v1/observations",
+            "query": {
+              "series_id": "activity-index",
+              "period_start": "2026-02-01",
+              "period_end": "2026-03-01",
+              "published_as_of": "2026-03-04T00:00:00Z"
+            }
+          },
+          "expect": {"status": 200, "body": {"data": [{"revision_id": "rev_feb26_2", "value": "101.3"}]}}
+        }
+      ],
+      "reason": "The query reflects the revisions available when it runs. With the clock at March 4, the correction does not exist yet; once it does, the same query applies it."
+    },
+    {
+      "name": "a release held by the provider is absent until available",
+      "clock": "2025-12-03T13:00:00Z",
+      "steps": [
+        {
+          "request": {
+            "path": "/v1/observations",
+            "query": {
+              "series_id": "activity-index",
+              "period_start": "2025-11-01",
+              "period_end": "2025-12-01",
+              "published_as_of": "2025-12-03T13:00:00Z"
+            }
+          },
+          "expect": {"status": 200, "body": {"data": []}}
+        },
+        {"set_clock": "2025-12-04T12:31:10Z"},
+        {
+          "request": {
+            "path": "/v1/observations",
+            "query": {
+              "series_id": "activity-index",
+              "period_start": "2025-11-01",
+              "period_end": "2025-12-01",
+              "published_as_of": "2025-12-03T13:00:00Z"
+            }
+          },
+          "expect": {"status": 200, "body": {"data": []}}
+        },
+        {"set_clock": "2025-12-04T12:45:00Z"},
+        {
+          "request": {
+            "path": "/v1/observations",
+            "query": {
+              "series_id": "activity-index",
+              "period_start": "2025-11-01",
+              "period_end": "2025-12-01",
+              "published_as_of": "2025-12-03T13:00:00Z"
+            }
+          },
+          "expect": {"status": 200, "body": {"data": [{"revision_id": "rev_nov25_1", "value": "100.0"}]}}
+        }
+      ],
+      "reason": "The source published 100.0 on December 3, but the provider held it until December 4 at 12:45. The revision that became available first was published after the cutoff. The query check at the default clock returns rev_nov25_1 for the same cutoff."
     }
   ]
 }
