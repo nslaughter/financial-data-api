@@ -119,6 +119,9 @@ or infer order from them.
 - A null value differs from zero and from an absent observation. A query
   returns the observation with its null value and reason; an absent
   observation is not returned at all.
+- A withdrawn observation is also returned, with a null value and a
+  `change_type` of `withdrawal`, so a customer can tell it apart from one that
+  was never released.
 
 ## Change types
 
@@ -133,6 +136,12 @@ Keeping `provider_correction` distinct from `source_revision` lets a customer
 tell a new estimate from the source apart from a fix to data the provider
 served.
 
+In version 0.1, a `provider_correction` may only fix the observation's
+highest-numbered revision at the time of the correction, and it takes the next
+`revision_number`. Correcting a revision the source has already superseded
+requires a later contract version, which would add a field identifying the
+corrected revision.
+
 ## Selecting the revision available at a cutoff
 
 This is the `available_as_of` cutoff. For a cutoff `T` and a period range from
@@ -143,10 +152,10 @@ This is the `available_as_of` cutoff. For a cutoff `T` and a period range from
 2. For each observation, take its revisions with `available_at` ≤ `T`. The
    boundary is inclusive.
 3. Select the revision with the highest `revision_number` among them.
-4. If there is none, the observation is absent from the result. If the
-   selected revision is a `withdrawal`, the observation is also absent.
-5. Otherwise, return the selected revision, including a null value with its
-   reason.
+4. If there is none, the observation is absent from the result.
+5. Otherwise, return the selected revision. A released observation without a
+   value is returned with its `missing_reason`; a withdrawn observation is
+   returned with a null value and a `change_type` of `withdrawal`.
 6. Order the results by `period_start`, ascending.
 
 Without a cutoff, `T` is the current time, which returns the latest revision of
@@ -170,8 +179,8 @@ It uses the same rule with `published_at` in place of `available_at`:
 2. For each observation, take its revisions with `published_at` ≤ `T`. The
    boundary is inclusive.
 3. Select the revision with the highest `revision_number` among them.
-4. Omit the observation if there is none or the selected revision is a
-   `withdrawal`; otherwise return the selected revision.
+4. Omit the observation if there is none; otherwise return the selected
+   revision, including a withdrawal.
 5. Order the results by `period_start`, ascending.
 
 A provider correction keeps the `published_at` of the value it corrects, so
@@ -262,7 +271,7 @@ contract version.
 | [`august-2026-at-cutoffs.json`](../expected/august-2026-at-cutoffs.json) | The August value at cutoffs around its release and revision, including the inclusive boundary |
 | [`full-history.json`](../expected/full-history.json) | All 32 observations at the September 4 research date and at the latest state, with page boundaries for a page size of 10 |
 | [`missing-value.json`](../expected/missing-value.json) | A null value with its reason, distinct from an absent observation |
-| [`withdrawal-and-rerelease.json`](../expected/withdrawal-and-rerelease.json) | An observation absent while withdrawn, then re-released |
+| [`withdrawal-and-rerelease.json`](../expected/withdrawal-and-rerelease.json) | An observation returned as withdrawn, then re-released |
 | [`out-of-order-arrival.json`](../expected/out-of-order-arrival.json) | A revision that supersedes a release delivered after it |
 | [`provider-correction.json`](../expected/provider-correction.json) | The value as served before a correction, and the time fields the correction keeps |
 | [`published-as-of.json`](../expected/published-as-of.json) | What the source had published by each cutoff, compared with what the API was serving at the same instant |
@@ -279,33 +288,36 @@ tagged `contract-v0.1.0`; the SDK, the demo API, and the monitor each pin a
 tag. Any change to a fixture or an expected result gets a new version, which
 consumers adopt deliberately.
 
-## Decisions to review
+## Decisions
 
-These choices are proposals in this draft:
+These decisions were settled on October 4, 2026:
 
-1. **Withdrawn observations are absent from query results.** The withdrawal
-   remains visible in the change stream and the revision history. The
-   alternative is to return the observation with a withdrawn status.
+1. **Withdrawn observations are returned, marked as withdrawn.** A query
+   returns the withdrawal revision, with a null value, so a customer can tell
+   a withdrawn observation apart from one never released. A customer who
+   syncs by querying, instead of reading the change stream, still learns of
+   the withdrawal. Clients that want only values filter on `change_type`.
 2. **Precedence uses a per-observation `revision_number`.** This handles a
-   revision delivered before the release it revises. Version 0.1 doesn't
-   define how a provider correction is numbered if the source has already
-   revised the value it corrects; no fixture exercises that case. Both
-   cutoffs depend on the answer: if such a correction were numbered above the
-   source's revision, either query would return the corrected old value
-   instead of the revision.
+   revision delivered before the release it revises. A provider correction may
+   fix only the observation's highest-numbered revision and takes the next
+   number. Correcting a superseded revision waits for a later contract version
+   with a field identifying the corrected revision; without that rule, either
+   cutoff could return a corrected old value instead of a later revision.
 3. **A provider correction keeps the corrected value's `published_at` and
-   `received_at`.** This is what lets `published_as_of` apply corrections;
-   reversing it would break that query.
+   `received_at`.** The source published the value once, and
+   `published_as_of` depends on this rule to apply corrections.
 4. **Both cutoff boundaries are inclusive**: `available_at` ≤ `T`, or
    `published_at` ≤ `T`.
 5. **`available_at` values can tie.** `sequence` orders revisions that share
    one, and positions are sequence numbers, not timestamps.
-6. **A null value requires a `missing_reason`; a withdrawal has neither.**
+6. **A null value requires a `missing_reason`; a withdrawal has neither.** Its
+   `change_type` explains the missing value.
 7. **The synthetic calendar ignores weekends and holidays.** Every release is
-   scheduled on the third of the month.
+   scheduled on the third of the month. Add a moved release when the monitor
+   needs to test schedule changes.
 8. **Version 0.1 has one series and no entitlement fixtures.** Revoking access
-   is a test action specified in the API spec. A second series can be added
-   when the monitor needs to check entitlement differences between datasets.
+   is a test action specified in the API spec. Add a second dataset before the
+   full API or the monitor needs to compare what different credentials can see.
 9. **Period filters match observations that fall entirely within the range.**
    Overlap matching is unnecessary while every series is monthly.
 10. **`published_as_of` applies corrections made after `T`.** It reconstructs

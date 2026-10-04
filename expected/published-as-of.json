@@ -93,11 +93,13 @@
     {
       "name": "withdrawal announced, not yet available",
       "query": {"series_id": "activity-index", "period_start": "2025-05-01", "period_end": "2025-06-01", "published_as_of": "2025-06-20T16:00:00Z"},
-      "expected": [],
+      "expected": [
+        {"observation_id": "obs_may25", "revision_id": "rev_may25_2", "value": null, "missing_reason": null, "change_type": "withdrawal"}
+      ],
       "contrast_available_as_of": [
         {"observation_id": "obs_may25", "revision_id": "rev_may25_1", "value": "100.6"}
       ],
-      "reason": "The source announced the withdrawal at 16:00:00. The API still served 100.6 until 16:01:10."
+      "reason": "The source announced the withdrawal at 16:00:00, so the withdrawal is returned. The API still served 100.6 until 16:01:10."
     },
     {
       "name": "released without a value at the instant of publication",

@@ -1,7 +1,7 @@
 {
   "contract_version": "0.1.0",
   "case": "withdrawal-and-rerelease",
-  "description": "May 2025 is released as 100.6, withdrawn by the source on June 20 after a collection error, and re-released as 100.1 with the June release on July 3.",
+  "description": "May 2025 is released as 100.6, withdrawn by the source on June 20 after a collection error, and re-released as 100.1 with the June release on July 3. While withdrawn, the observation is returned as the withdrawal revision, with a null value.",
   "checks": [
     {
       "name": "one second before release",
@@ -20,13 +20,17 @@
     {
       "name": "withdrawn at the exact instant",
       "query": {"series_id": "activity-index", "period_start": "2025-05-01", "period_end": "2025-06-01", "available_as_of": "2025-06-20T16:01:10Z"},
-      "expected": [],
-      "reason": "The selected revision is the withdrawal rev_may25_2, so the observation is absent."
+      "expected": [
+        {"observation_id": "obs_may25", "revision_id": "rev_may25_2", "value": null, "missing_reason": null, "change_type": "withdrawal"}
+      ],
+      "reason": "The selected revision is the withdrawal rev_may25_2. It is returned so the customer can tell the observation was withdrawn, not never released."
     },
     {
       "name": "while withdrawn",
       "query": {"series_id": "activity-index", "period_start": "2025-05-01", "period_end": "2025-06-01", "available_as_of": "2025-06-25T00:00:00Z"},
-      "expected": [],
+      "expected": [
+        {"observation_id": "obs_may25", "revision_id": "rev_may25_2", "value": null, "missing_reason": null, "change_type": "withdrawal"}
+      ],
       "reason": "The withdrawal is still the selected revision."
     },
     {
