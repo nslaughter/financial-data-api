@@ -396,7 +396,7 @@ contract version.
 | [`simulated-clock.json`](../expected/simulated-clock.json) | Revisions after the clock are invisible; moving the clock reveals them; resetting restores the start |
 | [`pagination.json`](../expected/pagination.json) | Pages keep their snapshot while data changes, tokens are bound to their query and credential, and snapshots expire |
 | [`access-control.json`](../expected/access-control.json) | Missing, unknown, and revoked keys; refusals without entitlement, including on resumed pages; an empty result distinct from a refusal |
-| [`request-errors.json`](../expected/request-errors.json) | Unknown, missing, and malformed parameters, period ranges, cutoffs after the clock, unsupported versions, and the order in which errors are reported |
+| [`request-errors.json`](../expected/request-errors.json) | Unknown, missing, and malformed parameters and bodies, period ranges, cutoffs after the clock, unsupported versions, and the order in which errors are reported |
 | [`published-as-of.json`](../expected/published-as-of.json) | What the source had published by each cutoff, compared with what the API was serving at the same instant |
 | [`revision-history.json`](../expected/revision-history.json) | Every revision of an observation, including superseded and erroneous ones |
 | [`release-calendar.json`](../expected/release-calendar.json) | Scheduled release times |

@@ -125,11 +125,11 @@
       "steps": [
         {
           "request": {"path": "/v1/observations", "query": {"series_id": "activity-index", "period_start": "2026-09-01", "period_end": "2026-09-01"}},
-          "expect": {"status": 400, "code": "invalid_parameter"}
+          "expect": {"status": 400, "code": "invalid_parameter", "body": {"parameter": "period_end"}}
         },
         {
           "request": {"path": "/v1/observations", "query": {"series_id": "activity-index", "period_start": "2026-09-01", "period_end": "2026-08-01"}},
-          "expect": {"status": 400, "code": "invalid_parameter"}
+          "expect": {"status": 400, "code": "invalid_parameter", "body": {"parameter": "period_end"}}
         },
         {
           "request": {"path": "/v1/observations", "query": {"series_id": "activity-index", "period_start": "2026-08-01"}},
@@ -140,7 +140,7 @@
           "expect": {"status": 200, "body": {"data": [{"observation_id": "obs_jan24"}]}}
         }
       ],
-      "reason": "Either bound may be omitted. When both are given, period_start must be before period_end."
+      "reason": "Either bound may be omitted. When both are given, period_start must be before period_end. An empty or reversed range names period_end."
     },
     {
       "name": "a period filter matches only periods within the range",
@@ -235,6 +235,20 @@
         }
       ],
       "reason": "page_size and limit run from 1 to 1000; after is a non-negative integer. Integers have no sign and no leading zeros."
+    },
+    {
+      "name": "request bodies",
+      "steps": [
+        {
+          "request": {"method": "PUT", "path": "/test/clock", "credential": "cred_test_control", "body": ["2026-10-01T00:00:00Z"]},
+          "expect": {"status": 400, "code": "invalid_parameter", "body": {"parameter": null}}
+        },
+        {
+          "request": {"method": "PUT", "path": "/test/clock", "credential": "cred_test_control"},
+          "expect": {"status": 400, "code": "missing_parameter", "body": {"parameter": "now"}}
+        }
+      ],
+      "reason": "A body that is not a JSON object is malformed, and its error names no parameter. An absent body is treated as {}, so the required now is missing."
     },
     {
       "name": "a position ahead of the stream",

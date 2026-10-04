@@ -60,7 +60,7 @@
       "steps": [
         {
           "request": {"method": "PUT", "path": "/test/clock", "credential": "cred_test_control", "body": {"now": "2026-09-10T12:30:19Z"}},
-          "expect": {"status": 409, "code": "clock_backwards"}
+          "expect": {"status": 409, "code": "clock_backwards", "body": {"parameter": "now"}}
         },
         {"request": {"path": "/test/clock", "credential": "cred_test_control"}, "expect": {"status": 200, "body": {"now": "2026-09-10T12:30:20Z"}}},
         {
@@ -68,7 +68,7 @@
           "expect": {"status": 200, "body": {"now": "2026-09-10T12:30:20Z"}}
         }
       ],
-      "reason": "PUT /test/clock only moves forward; the current time is accepted and changes nothing."
+      "reason": "PUT /test/clock only moves forward, and the refusal names now; the current time is accepted and changes nothing."
     },
     {
       "name": "a reset without a clock restores the start",
