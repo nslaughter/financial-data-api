@@ -1,8 +1,8 @@
 # Data contract: synthetic activity index
 
-**Status:** Version 0.2.0, tagged `contract-v0.2.0` on October 4, 2026.
-Version 0.1.0 is tagged `contract-v0.1.0`. All data is synthetic and describes
-no real economy, source, or provider.
+**Status:** Version 0.3.0, tagged `contract-v0.3.0`. Earlier versions are
+tagged `contract-v0.2.0` and `contract-v0.1.0`, both on October 4, 2026. All
+data is synthetic and describes no real economy, source, or provider.
 
 This contract defines the dataset shared by the provider demonstration: the
 [Python](https://github.com/nslaughter/financial-data-sdk-python),
@@ -43,9 +43,9 @@ disagreement instead of choosing one.
 
 - A **dataset** is a group of series licensed together. Entitlements, the
   change stream, and exports are per dataset. `core-indicators` is the only
-  dataset in version 0.2.
+  dataset in version 0.3.
 - A **series** is a sequence of measurements with one meaning, unit, and
-  frequency. `activity-index` is the only series in version 0.2.
+  frequency. `activity-index` is the only series in version 0.3.
 - An **observation** is the series' measurement for one period. Its identity
   stays fixed while its value is revised.
 - A **revision** is one version of an observation. The first release, each
@@ -76,7 +76,7 @@ disagreement instead of choosing one.
 | `dataset_id` | string | The dataset the series belongs to. Entitlements are granted per dataset. |
 | `name` | string | Display name. |
 | `description` | string | What the series measures. |
-| `frequency` | string | `monthly` for every series in version 0.2. |
+| `frequency` | string | `monthly` for every series in version 0.3. |
 | `unit` | string | Unit of every value in the series. |
 | `base_period` | string | Reference period for an index. For `activity-index`, the 2025 values average 100. |
 | `seasonal_adjustment` | string | `seasonally_adjusted` or `not_seasonally_adjusted`. |
@@ -181,7 +181,7 @@ the rule.
   representation must not convert it through binary floating point. The
   source publishes `activity-index` to one decimal place.
 - A released observation without a number has a null `value` and a
-  `missing_reason`. Version 0.2 uses one reason, `not_collected`: the source
+  `missing_reason`. Version 0.3 uses one reason, `not_collected`: the source
   published the period without a value because the data was not collected.
   Clients must accept reasons they do not recognize.
 - A null value differs from zero and from an absent observation. A query
@@ -204,7 +204,7 @@ Keeping `provider_correction` distinct from `source_revision` lets a customer
 tell a new estimate from the source apart from a fix to data the provider
 served.
 
-In version 0.2, a `provider_correction` may only fix the observation's
+In version 0.3, a `provider_correction` may only fix the observation's
 highest-numbered revision at the time of the correction, and it takes the next
 `revision_number`. Correcting a revision the source has already superseded
 requires a later contract version, which would add a field identifying the
@@ -393,15 +393,15 @@ contract version.
 | [`provider-correction.json`](../expected/provider-correction.json) | The value as served before a correction, and the time fields the correction keeps |
 | [`late-source-release.json`](../expected/late-source-release.json) | No value at the usual time, then the late release |
 | [`change-stream.json`](../expected/change-stream.json) | Positions for given times, reads after a position, applying events by precedence, retention, and a position ahead of the stream |
-| [`simulated-clock.json`](../expected/simulated-clock.json) | Revisions after the clock are invisible; moving the clock reveals them; resetting restores the start |
+| [`simulated-clock.json`](../expected/simulated-clock.json) | Revisions after the clock are invisible; moving the clock reveals them; resetting restores the start; the latest clock is accepted and a later one refused |
 | [`pagination.json`](../expected/pagination.json) | Pages keep their snapshot while data changes, tokens are bound to their query and credential, and snapshots expire |
 | [`access-control.json`](../expected/access-control.json) | Missing, unknown, and revoked keys; refusals without entitlement, including on resumed pages; an empty result distinct from a refusal |
-| [`request-errors.json`](../expected/request-errors.json) | Unknown, missing, and malformed parameters, cutoffs after the clock, unsupported versions, and the order in which errors are reported |
+| [`request-errors.json`](../expected/request-errors.json) | Unknown, missing, and malformed parameters and bodies, period ranges, cutoffs after the clock, unsupported versions, stage 2 parameters and paths refused by a stage 1 server, and the order in which errors are reported |
 | [`published-as-of.json`](../expected/published-as-of.json) | What the source had published by each cutoff, compared with what the API was serving at the same instant |
 | [`revision-history.json`](../expected/revision-history.json) | Every revision of an observation, including superseded and erroneous ones |
 | [`release-calendar.json`](../expected/release-calendar.json) | Scheduled release times |
 | [`export-handoff.json`](../expected/export-handoff.json) | Loading a snapshot and its position without losing a revision, compared with the two ways to lose it |
-| [`exports.json`](../expected/exports.json) | Repeatable downloads, regeneration, expiry, and protection of export files |
+| [`exports.json`](../expected/exports.json) | Repeatable downloads, regeneration, identifiers that are never reused, expiry, and protection of export files |
 | [`release-timing.json`](../expected/release-timing.json) | Source delay and availability delay for on-time, late-source, and late-provider releases |
 
 ## Implementations and conformance
@@ -429,6 +429,11 @@ Not every check applies from the first stage:
 | `published-as-of`, `revision-history`, `release-calendar`, `export-handoff`, `exports` | Stage 2 | When each SDK adds the feature | — |
 | `release-timing` | Stage 2, computed from the revision history and the release calendar | — | Stage 3 |
 
+A scenario can also name the stages at which it runs, with the `stages`
+member of the [conformance format](conformance.md#scenarios). The scenario in
+`request-errors` that checks a stage 1 server's refusal of `published_as_of`
+and `GET /v1/revisions` runs only at stage 1.
+
 ## Versioning
 
 The contract, fixtures, and expected results are versioned together. Each
@@ -443,6 +448,32 @@ the clock, pagination, access control, request errors, the revision history,
 the release calendar, and exports. It restructures `export-handoff` as
 scenarios and adds next and head positions to the change-stream reads. No
 fixture record or earlier expected record changed.
+
+Version 0.3.0 corrects errors that a review of the whole contract found and
+applies decisions 26 to 32. `TEST_CONTROL=disabled` is accepted at startup,
+an environment variable set to an empty value takes its default, and the
+clock has a latest value. The entitlement exemption names all four catalog
+endpoints, `PUT /test/credentials/{credential_id}` is named as the one
+exception to the error order, `parameter` can name a path parameter, export
+identifiers carry at least 64 bits from a cryptographically secure random
+source, and export files escape strings exactly as Go 1.22 and later
+`encoding/json` does with `SetEscapeHTML(false)`. The conformance format adds
+the scenario member `stages`, compares `expected_local_copy` by observation,
+has SDK runners run the position and read checks, and counts the
+change-stream check kinds correctly, and the first export line is stated
+only for exports at position 1 or later. New scenarios check that period
+filters match whole periods (`request-errors`, `revision-history`, and
+`release-calendar`), that export identifiers are never reused (`exports`),
+that a malformed or absent request body and, at stage 1 only, stage 2
+parameters and paths are refused (`request-errors`), and the clock's latest
+value (`simulated-clock`). Earlier expected records also changed. Five
+existing steps now expect `parameter` as well as `code`: the empty and
+reversed period ranges in `request-errors` (`period_end`), `clock_backwards`
+in `simulated-clock` (`now`), and the two credential refusals in
+`access-control` (`credential_id` and `datasets`); the reasons of their
+scenarios say so. Every `contract_version`, including those in the expected
+`/v1/meta` and export manifest bodies, reads `0.3.0`. No fixture record
+changed.
 
 ## Decisions
 
@@ -528,8 +559,9 @@ The operator reviewed and settled these for version 0.2.0 on October 4, 2026:
     fixture history at the default clock, and expiry is tested by moving the
     clock, so there is no settings endpoint.
 22. **Only a reset moves the clock backwards.** `PUT /test/clock` moves it
-    forward only; `POST /test/reset` may set any clock, and it discards page
-    tokens and exports so that no state from a later time survives.
+    forward only; `POST /test/reset` may set any clock up to the limit in
+    decision 26, and it discards page tokens and exports so that no state
+    from a later time survives.
 23. **A resumed page repeats every parameter of the first request,**
     including `page_size`, and leaves omitted parameters omitted. Any
     difference is refused, so a resumed page cannot drop a cutoff.
@@ -540,6 +572,43 @@ The operator reviewed and settled these for version 0.2.0 on October 4, 2026:
 25. **The release calendar ignores the simulated clock.** It is a plan
     published in advance, and a monitor needs upcoming releases to know what
     is due.
+
+The operator reviewed and settled these for version 0.3.0 on October 4, 2026:
+
+26. **The simulated clock is never later than `9999-12-30T23:59:59Z`.** It is
+    the latest instant whose derived timestamps still fit the four-digit-year
+    timestamp format: an export created then expires at
+    `9999-12-31T23:59:59Z`. `PUT /test/clock` and `POST /test/reset` refuse a
+    later `now` or `clock` with `400 invalid_parameter`, and a server whose
+    `CLOCK_START` is later refuses to start.
+27. **A scenario can be limited to the stages it lists.** The conformance
+    files are cumulative, so without the `stages` member no check could show
+    that a stage 1 server refuses `published_as_of` and the stage 2 paths
+    without failing every stage 2 server. SDK runners honor it like the API
+    runner.
+28. **An export identifier carries at least 64 bits from a cryptographically
+    secure random source.** Lookup comes before entitlement, so a key without
+    entitlement can tell an existing export from an unknown one; random
+    identifiers keep it from finding exports by guessing. The error order,
+    the `403` checks in `exports`, and decision 18 stay as they are.
+29. **SDK runners run the query, position, read, and apply checks and the
+    scenarios.** They use the SDK's own methods, or HTTP where the SDK has
+    none, so every SDK shows from stage 1 that it reads the change stream
+    correctly. They leave release timing to the monitor.
+30. **Export strings are escaped as Go 1.22 and later `encoding/json` escapes
+    them with `SetEscapeHTML(false)`.** One exact rule gives every
+    implementation the same bytes, and Go's standard encoder produces them
+    without a custom writer. Control characters are U+0000 to U+001F only, so
+    U+007F and U+0080 to U+009F are written as UTF-8.
+31. **An environment variable set to an empty value is treated as unset.** Its
+    default applies, for `PORT`, `CLOCK_START`, `TEST_CONTROL`, and
+    `FIXTURES_DIR` alike, so clearing a variable has the same effect as
+    leaving it out.
+32. **A `GET` sent with a body is checked by the server's own tests, not by
+    the conformance files.** Fetch-based clients, such as one a TypeScript
+    runner would use, refuse to send a body with `GET`. Plan step 4 tests
+    with `httptest` that such a request, even with a body that is not a JSON
+    object, is answered as if it had none.
 
 ## Open questions
 

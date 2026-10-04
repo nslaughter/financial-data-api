@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "published-as-of",
   "description": "What the source had published by each cutoff, with the provider's processing errors corrected. Each check also gives contrast_available_as_of: the result of the available_as_of query at the same instant, which describes what a customer could retrieve.",
   "checks": [

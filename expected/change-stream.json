@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "change-stream",
   "description": "Positions in the change stream, the revisions a consumer reads after a position, and retention. A position P means every revision with sequence <= P has been applied.",
   "position_checks": [

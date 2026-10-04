@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "simulated-clock",
   "description": "The demo API serves only revisions whose available_at is at or before its simulated clock. Test control moves the clock forward and resets it.",
   "scenarios": [
@@ -11,7 +11,7 @@
           "request": {"path": "/v1/meta", "credential": null},
           "expect": {
             "status": 200,
-            "body": {"api_version": "v1", "supported_api_versions": ["v1"], "contract_version": "0.2.0", "server_time": "2026-09-10T12:30:20Z"}
+            "body": {"api_version": "v1", "supported_api_versions": ["v1"], "contract_version": "0.3.0", "server_time": "2026-09-10T12:30:20Z"}
           }
         }
       ],
@@ -60,7 +60,7 @@
       "steps": [
         {
           "request": {"method": "PUT", "path": "/test/clock", "credential": "cred_test_control", "body": {"now": "2026-09-10T12:30:19Z"}},
-          "expect": {"status": 409, "code": "clock_backwards"}
+          "expect": {"status": 409, "code": "clock_backwards", "body": {"parameter": "now"}}
         },
         {"request": {"path": "/test/clock", "credential": "cred_test_control"}, "expect": {"status": 200, "body": {"now": "2026-09-10T12:30:20Z"}}},
         {
@@ -68,7 +68,21 @@
           "expect": {"status": 200, "body": {"now": "2026-09-10T12:30:20Z"}}
         }
       ],
-      "reason": "PUT /test/clock only moves forward; the current time is accepted and changes nothing."
+      "reason": "PUT /test/clock only moves forward, and the refusal names now; the current time is accepted and changes nothing."
+    },
+    {
+      "name": "the clock moves to its latest value and no further",
+      "steps": [
+        {
+          "request": {"method": "PUT", "path": "/test/clock", "credential": "cred_test_control", "body": {"now": "9999-12-31T00:00:00Z"}},
+          "expect": {"status": 400, "code": "invalid_parameter", "body": {"parameter": "now"}}
+        },
+        {
+          "request": {"method": "PUT", "path": "/test/clock", "credential": "cred_test_control", "body": {"now": "9999-12-30T23:59:59Z"}},
+          "expect": {"status": 200, "body": {"now": "9999-12-30T23:59:59Z"}}
+        }
+      ],
+      "reason": "9999-12-30T23:59:59Z is the latest clock: an export created then expires at 9999-12-31T23:59:59Z, the last instant the timestamp format can express. One second later is refused as an invalid now."
     },
     {
       "name": "a reset without a clock restores the start",
@@ -94,6 +108,20 @@
         {"request": {"path": "/v1/datasets/core-indicators"}, "expect": {"status": 200, "body": {"head_position": 17}}}
       ],
       "reason": "One second before the May 2025 withdrawal becomes available, the head position is 17 and the initial release is current."
+    },
+    {
+      "name": "a reset accepts the latest clock and no later",
+      "steps": [
+        {
+          "request": {"method": "POST", "path": "/test/reset", "credential": "cred_test_control", "body": {"clock": "9999-12-31T00:00:00Z"}},
+          "expect": {"status": 400, "code": "invalid_parameter", "body": {"parameter": "clock"}}
+        },
+        {
+          "request": {"method": "POST", "path": "/test/reset", "credential": "cred_test_control", "body": {"clock": "9999-12-30T23:59:59Z"}},
+          "expect": {"status": 200, "body": {"now": "9999-12-30T23:59:59Z"}}
+        }
+      ],
+      "reason": "A reset may move the clock anywhere up to 9999-12-30T23:59:59Z, the latest clock whose derived timestamps fit the timestamp format. One second later is refused as an invalid clock."
     },
     {
       "name": "before the first revision",

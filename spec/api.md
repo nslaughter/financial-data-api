@@ -1,6 +1,6 @@
 # API specification: financial data API v1
 
-**Status:** Version 0.2.0, tagged `contract-v0.2.0` with the
+**Status:** Version 0.3.0, tagged `contract-v0.3.0` with the
 [data contract](data-contract.md).
 
 This document specifies how the demo API (stage 1) and the full API (stage 2)
@@ -43,9 +43,11 @@ contract version built in. It reads these environment variables:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `PORT` | `8080` | TCP port for HTTP. |
-| `CLOCK_START` | `2026-10-01T00:00:00Z` | The simulated clock at startup and after a reset without a clock. Must be a timestamp in the format below. |
-| `TEST_CONTROL` | `disabled` | `enabled` serves the `/test` endpoints. Any other value is refused at startup. |
+| `CLOCK_START` | `2026-10-01T00:00:00Z` | The simulated clock at startup and after a reset without a clock. Must be a timestamp in the format below, no later than `9999-12-30T23:59:59Z` (see [Simulated clock](#simulated-clock)); otherwise the server refuses to start. |
+| `TEST_CONTROL` | `disabled` | `enabled` serves the `/test` endpoints, and `disabled` does not. Any other nonempty value is refused at startup. |
 | `FIXTURES_DIR` | the fixtures built into the image | Directory containing the files from `fixtures/`. |
+
+A variable set to an empty value is treated as unset, so its default applies.
 
 At startup the server loads every fixture file and checks the
 [invariants](data-contract.md#invariants). If any check fails, it MUST exit
@@ -147,7 +149,8 @@ An error response has `Content-Type: application/problem+json` and this body:
 
 `code` is stable and is what clients act on. `title` is fixed for each code.
 `detail` explains this occurrence and may change between versions.
-`parameter` names the query parameter or body field at fault:
+`parameter` names the query parameter, body field, or path parameter at
+fault:
 
 - `unknown_parameter`, `missing_parameter`, `invalid_parameter`, and
   `cutoff_in_future` name the parameter or field. An empty or reversed period
@@ -185,13 +188,19 @@ When a request has several faults, the server reports the first in this order:
    path (including `/test` paths when test control is disabled), or
    `405 method_not_allowed`.
 2. **Authentication.** `401 unauthenticated`.
-3. **Request validation.** Any `400` except `position_ahead`. Where several
-   validation faults apply, the server reports any one of them.
+3. **Request validation.** Any `400` except `position_ahead` and the two
+   checks of `PUT /test/credentials/{credential_id}` described below. Where
+   several validation faults apply, the server reports any one of them.
 4. **Lookup.** `404 not_found` for a series, dataset, export, file, or
    credential named by the request.
 5. **Entitlement.** `403 not_entitled`.
 6. **State.** `400 position_ahead`, `409 clock_backwards`, and the `410`
    errors.
+
+`PUT /test/credentials/{credential_id}` checks the credential's kind and the
+datasets in its body after it looks up the credential, and reports a
+test-control credential or an unknown dataset as `400 invalid_parameter`,
+not `404 not_found`, as that endpoint describes.
 
 ### Authentication and entitlements
 
@@ -204,8 +213,9 @@ When a request has several faults, the server reports the first in this order:
   with `401 unauthenticated`.
 - A `401` response includes `WWW-Authenticate: Bearer`.
 - A customer key may read metadata without entitlements: the catalog
-  (`/v1/datasets` and `/v1/series`) and the release calendar
-  (`/v1/release-calendar`). Every other `/v1` endpoint reads one dataset's
+  (`GET /v1/datasets`, `GET /v1/datasets/{dataset_id}`, `GET /v1/series`,
+  and `GET /v1/series/{series_id}`) and the release calendar
+  (`GET /v1/release-calendar`). Every other `/v1` endpoint reads one dataset's
   revisions and requires the key to be entitled to it; otherwise it returns
   `403 not_entitled`.
 - The server checks the key and its entitlements on every request, using
@@ -235,6 +245,14 @@ purpose:
 The clock starts at `CLOCK_START` and does not advance by itself. Only
 `PUT /test/clock` moves it forward, and only `POST /test/reset` moves it
 anywhere else. A request reads the clock once and uses that value throughout.
+
+The clock is never later than `9999-12-30T23:59:59Z`, the latest instant
+whose derived timestamps still fit the timestamp format: an export's
+`expires_at` is the clock plus 86,400 seconds, and a query's
+`snapshot_expires_at` is the clock plus 3,600 seconds. A server whose
+`CLOCK_START` is later refuses to start, and a later `now` for
+`PUT /test/clock` or `clock` for `POST /test/reset` returns
+`400 invalid_parameter` naming that field.
 
 ### Positions and snapshots
 
@@ -302,7 +320,7 @@ serves as the readiness check.
 {
   "api_version": "v1",
   "supported_api_versions": ["v1"],
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "server_time": "2026-10-01T00:00:00Z"
 }
 ```
@@ -540,7 +558,7 @@ its body and a `Location` header holding the manifest's path,
   "created_at": "2026-09-10T12:30:20Z",
   "expires_at": "2026-09-11T12:30:20Z",
   "api_version": "v1",
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "coverage": {
     "series_ids": ["activity-index"],
     "observation_count": 32,
@@ -561,9 +579,13 @@ its body and a `Location` header holding the manifest's path,
 }
 ```
 
-- `export_id` identifies the snapshot. It is opaque, and the server MUST NOT
-  reuse one, even after a reset. Creating another export, even at the same
-  position, creates a new identity.
+- `export_id` identifies the snapshot. It is opaque, it MUST carry at least
+  64 bits from a cryptographically secure random source, and the server MUST
+  NOT reuse one, even after a reset. Creating another export, even at the
+  same position, creates a new identity. Lookup comes before entitlement in
+  the error order, so a key without entitlement can tell an existing export
+  (`403 not_entitled`) from an unknown one (`404 not_found`); random
+  identifiers keep it from finding exports by guessing.
 - `position` is the dataset's head position when the export is created. The
   snapshot is every visible revision with `sequence` at or below it. Revisions
   that become visible later are never in this export, whenever its file is
@@ -596,12 +618,22 @@ canonical form so that every implementation produces the same bytes:
   [revision records](data-contract.md#revision-records) table, starting with
   `sequence` and ending with `available_at`;
 - no whitespace outside strings;
-- strings escape only `"`, `\`, and control characters, and are UTF-8;
-  characters such as `<`, `>`, and `&` are not escaped;
+- strings are UTF-8 and are escaped exactly as Go 1.22 and later
+  `encoding/json` escapes them with `SetEscapeHTML(false)`, where a control
+  character is one from U+0000 to U+001F:
+  - `"` as `\"`, and `\` as `\\`;
+  - the control characters U+0008, U+000C, U+000A, U+000D, and U+0009 as
+    `\b`, `\f`, `\n`, `\r`, and `\t`;
+  - every other control character as `\u00xx`, with lowercase hexadecimal
+    digits, such as `\u001b`;
+  - U+2028 and U+2029 as `\u2028` and `\u2029`;
+  - every other character, including U+007F, U+0080 to U+009F, `<`, `>`, and
+    `&`, unescaped;
 - every record, including the last, ends with a single `\n`, and an empty
   snapshot is an empty file.
 
-The first line of every export of the fixture dataset is:
+The first line of every export of the fixture dataset at position 1 or later
+is:
 
 ```text
 {"sequence":1,"series_id":"activity-index","observation_id":"obs_jan24","revision_id":"rev_jan24_1","revision_number":1,"change_type":"initial_release","period_start":"2024-01-01","period_end":"2024-02-01","value":"97.1","missing_reason":null,"unit":"index_points","published_at":"2024-02-03T12:30:00Z","received_at":"2024-02-03T12:30:04Z","available_at":"2024-02-03T12:31:10Z"}
@@ -627,9 +659,10 @@ Returns the clock: `{"now": "2026-10-01T00:00:00Z"}`.
 ### `PUT /test/clock`
 
 Moves the clock forward. Body: `{"now": "<timestamp>"}`. `now` is required.
-A time before the current clock returns `409 clock_backwards`; the current
-time is accepted and changes nothing. Returns the new clock, as for
-`GET /test/clock`.
+A time later than `9999-12-30T23:59:59Z` returns `400 invalid_parameter`
+naming `now`. A time before the current clock returns `409 clock_backwards`;
+the current time is accepted and changes nothing. Returns the new clock, as
+for `GET /test/clock`.
 
 Revisions whose `available_at` the clock passes become visible at once, in
 `sequence` order, and expiry is evaluated against the new time.
@@ -637,8 +670,9 @@ Revisions whose `available_at` the clock passes become visible at once, in
 ### `POST /test/reset`
 
 Returns the server to its startup state, with an optional different clock.
-Body: empty, `{}`, or `{"clock": "<timestamp>"}`. Any valid timestamp is
-accepted, including one earlier than the current clock. The reset:
+Body: empty, `{}`, or `{"clock": "<timestamp>"}`. Any valid timestamp up to
+`9999-12-30T23:59:59Z` is accepted, including one earlier than the current
+clock; a later one returns `400 invalid_parameter` naming `clock`. The reset:
 
 - sets the clock to `clock`, or to `CLOCK_START` when absent;
 - restores every credential from the fixture;

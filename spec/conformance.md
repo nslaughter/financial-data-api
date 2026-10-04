@@ -1,6 +1,6 @@
 # Conformance format
 
-**Status:** Version 0.2.0, tagged `contract-v0.2.0` with the
+**Status:** Version 0.3.0, tagged `contract-v0.3.0` with the
 [data contract](data-contract.md).
 
 The files in [`expected/`](../expected) are one conformance suite for the API,
@@ -13,15 +13,19 @@ them and compares results, so that every runner reaches the same verdict.
   stage over HTTP against a server started with `TEST_CONTROL=enabled` and
   the default `CLOCK_START`, and it exits with a non-zero status if any check
   fails.
-- **SDK runners** run the query checks and `apply_checks` through the SDK's
-  own methods, and run scenarios over HTTP or through the SDK where it exposes
-  the operation. Each SDK documents which scenario steps it maps to its
-  methods.
+- **SDK runners** run the query checks, `position_checks`, `read_checks`,
+  `apply_checks`, and scenarios through the SDK's own methods, or over HTTP
+  where the SDK has no method for an operation. Each SDK documents which
+  checks and scenario steps it maps to its methods. SDK runners do not run
+  `release-timing`.
 - **The monitor** runs `release-timing`.
 
 The [stage table](data-contract.md#implementations-and-conformance) says which
-files each runner must pass from which stage. A runner given a stage runs
-every file required at or before it.
+files each runner must pass from which stage. The API runner and an SDK
+runner are given the stage of the server they run against, whatever features
+the SDK under test has. A runner given a stage runs every file required at or
+before it, except the scenarios whose `stages` member does not list that
+stage (see [Scenarios](#scenarios)).
 
 ## Rules for every check
 
@@ -75,7 +79,7 @@ first and last records have the listed `observation_id` values.
 
 ## Change-stream checks
 
-`change-stream.json` has four kinds of checks besides its scenarios:
+`change-stream.json` has three kinds of checks besides its scenarios:
 
 - **`position_checks`**: reset with the clock at `at`, then
   `GET /v1/datasets/core-indicators`. Its `head_position` must equal
@@ -111,12 +115,21 @@ For each check in `release-timing.json`, at the default clock:
 ## Scenarios
 
 A file's `scenarios` array holds scenarios. A scenario has a `name`, a
-`reason`, an optional `clock` for its reset, and `steps`, executed in order.
-A scenario passes when every step passes; the first failing step ends it.
+`reason`, an optional `clock` for its reset, an optional `stages`, and
+`steps`, executed in order. A scenario passes when every step passes; the
+first failing step ends it.
+
+`stages`, when present, is an array of stage numbers, such as `[1]`. A runner
+runs the scenario only when the stage it was given is listed. A scenario
+without `stages` runs whenever its file runs. SDK runners honor `stages` as
+the API runner does.
 
 SDK runners may also check a scenario's optional `expected_local_copy`: after
 loading the scenario's export file and applying the changes it reads, the
-SDK's local copy must select those revisions. The API runner ignores it.
+SDK's local copy must select those revisions. Each entry names an
+`observation_id`, and the revision the local copy selects for that
+observation must match the entry. Observations the list does not name are
+not compared. The API runner ignores it.
 
 ### Steps
 

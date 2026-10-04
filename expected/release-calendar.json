@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "release-calendar",
   "description": "GET /v1/release-calendar returns the scheduled releases of a series.",
   "scenarios": [
@@ -70,6 +70,32 @@
         }
       ],
       "reason": "32 scheduled releases, ordered by period_start."
+    },
+    {
+      "name": "a period filter matches only periods within the range",
+      "steps": [
+        {
+          "request": {
+            "path": "/v1/release-calendar",
+            "query": {"series_id": "activity-index", "period_start": "2026-07-15", "period_end": "2026-09-01"}
+          },
+          "expect": {
+            "status": 200,
+            "body": {"data": [{"period_start": "2026-08-01", "period_end": "2026-09-01", "scheduled_at": "2026-09-03T12:30:00Z"}]}
+          }
+        },
+        {
+          "request": {
+            "path": "/v1/release-calendar",
+            "query": {"series_id": "activity-index", "period_start": "2026-07-01", "period_end": "2026-08-15"}
+          },
+          "expect": {
+            "status": 200,
+            "body": {"data": [{"period_start": "2026-07-01", "period_end": "2026-08-01", "scheduled_at": "2026-08-03T12:30:00Z"}]}
+          }
+        }
+      ],
+      "reason": "A release is included only when its whole period lies within the range. Overlap matching would return both the July and the August 2026 releases for each range."
     },
     {
       "name": "the calendar ignores the clock",

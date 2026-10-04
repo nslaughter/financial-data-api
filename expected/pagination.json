@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "pagination",
   "description": "Paged queries are evaluated at one snapshot position. Tokens are opaque, bound to their endpoint, parameters, and credential, and expire with their snapshot.",
   "scenarios": [

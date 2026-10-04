@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "august-2026-at-cutoffs",
   "description": "The August 2026 observation is released as 102.4 on September 3 and revised by the source to 102.1 on September 10. Each cutoff asks which version an entitled customer could retrieve at that instant.",
   "checks": [

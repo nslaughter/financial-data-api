@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: Financial data API
-  version: 0.2.0
+  version: 0.3.0
   summary: Requests and responses of the demo API (stage 1) and the full API (stage 2).
   description: |
-    Machine-readable form of [the API specification](api.md), version 0.2.0,
+    Machine-readable form of [the API specification](api.md), version 0.3.0,
     versioned with [the data contract](data-contract.md).
 
     `api.md` governs behavior, and this document must agree with it. If an
@@ -32,11 +32,17 @@ info:
       `400 missing_parameter`. A body sent with a `GET` is ignored.
     - Faults are reported in this order: routing (404, 405), authentication
       (401), request validation (400 except `position_ahead`), lookup (404),
-      entitlement (403), state (`400 position_ahead`, 409, 410).
+      entitlement (403), state (`400 position_ahead`, 409, 410). The one
+      exception is `PUT /test/credentials/{credential_id}`, which checks the
+      credential's kind and the datasets in its body after lookup and reports
+      them as `400 invalid_parameter`.
     - Every response field is always present; a field without a value is
       `null`. Clients ignore response fields they do not recognize.
     - The server's current time is a simulated clock. Revisions whose
       `available_at` is after the clock are invisible on every customer path.
+      The clock is never later than `9999-12-30T23:59:59Z`, so that an
+      export's `expires_at` and a query's `snapshot_expires_at` still fit the
+      timestamp format.
 servers:
   - url: http://localhost:8080
     description: The demo API container on its default port.
@@ -74,7 +80,7 @@ paths:
                   value:
                     api_version: v1
                     supported_api_versions: [v1]
-                    contract_version: 0.2.0
+                    contract_version: 0.3.0
                     server_time: '2026-10-01T00:00:00Z'
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -498,9 +504,15 @@ paths:
         Every download returns identical bytes, whose length and SHA-256 digest
         match the manifest. The file has one revision record per line, ordered
         by `sequence`, in the canonical form defined in `api.md`: the 14 fields
-        in contract order, no whitespace outside strings, only `"`, `\`, and
-        control characters escaped, and a single `\n` after every record. The
-        same checks apply as for the manifest, at the time of the download.
+        in contract order, no whitespace outside strings, strings escaped as Go
+        1.22 and later `encoding/json` escapes them with `SetEscapeHTML(false)`,
+        and a single `\n` after every record. A string escapes `"` as `\"`, `\`
+        as `\\`, U+0008, U+000C, U+000A, U+000D, and U+0009 as `\b`, `\f`,
+        `\n`, `\r`, and `\t`, the other characters from U+0000 to U+001F as
+        `\u00xx` in lowercase hexadecimal, and U+2028 and U+2029 as `\u2028`
+        and `\u2029`; every other character, including U+007F to U+009F, is
+        written unescaped in UTF-8. The same checks apply as for the manifest,
+        at the time of the download.
       parameters:
         - $ref: '#/components/parameters/ExportIdPath'
         - $ref: '#/components/parameters/FileNamePath'
@@ -570,7 +582,8 @@ paths:
       description: |
         Revisions whose `available_at` the clock passes become visible at once,
         in `sequence` order, and expiry is evaluated against the new time. The
-        current time is accepted and changes nothing.
+        current time is accepted and changes nothing. A `now` later than
+        `9999-12-30T23:59:59Z` returns `400 invalid_parameter`.
       security:
         - testControlKey: []
       requestBody:
@@ -589,7 +602,7 @@ paths:
                 $ref: '#/components/schemas/Clock'
         '400':
           $ref: '#/components/responses/BadRequest'
-          description: '`unknown_parameter`, `missing_parameter`, `invalid_parameter`.'
+          description: '`unknown_parameter`, `missing_parameter`, `invalid_parameter` (including a `now` later than `9999-12-30T23:59:59Z`).'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '404':
@@ -608,7 +621,8 @@ paths:
       summary: Return the server to its startup state
       description: |
         Sets the clock to `clock`, or to `CLOCK_START` when absent; any valid
-        timestamp is accepted, including one earlier than the current clock.
+        timestamp up to `9999-12-30T23:59:59Z` is accepted, including one
+        earlier than the current clock.
         Restores every credential from the fixture, deletes every export, and
         replaces the page-token signing key. Positions held by clients are not
         invalidated.
@@ -630,7 +644,7 @@ paths:
                 $ref: '#/components/schemas/Clock'
         '400':
           $ref: '#/components/responses/BadRequest'
-          description: '`unknown_parameter`, `invalid_parameter`.'
+          description: '`unknown_parameter`, `invalid_parameter` (including a `clock` later than `9999-12-30T23:59:59Z`).'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '404':
@@ -716,7 +730,7 @@ components:
       name: export_id
       in: path
       required: true
-      description: An opaque export identifier.
+      description: An opaque export identifier, carrying at least 64 bits from a cryptographically secure random source.
       schema:
         type: string
     FileNamePath:
@@ -885,7 +899,7 @@ components:
         created_at: '2026-09-10T12:30:20Z'
         expires_at: '2026-09-11T12:30:20Z'
         api_version: v1
-        contract_version: 0.2.0
+        contract_version: 0.3.0
         coverage:
           series_ids: [activity-index]
           observation_count: 32
@@ -1078,7 +1092,7 @@ components:
           type: string
         frequency:
           type: string
-          description: '`monthly` for every series in contract version 0.2.'
+          description: '`monthly` for every series in contract version 0.3.'
         unit:
           type: string
         base_period:
@@ -1185,7 +1199,7 @@ components:
       properties:
         export_id:
           type: string
-          description: Identifies the snapshot. Opaque and never reused, even after a reset.
+          description: Identifies the snapshot. Opaque, carrying at least 64 bits from a cryptographically secure random source, and never reused, even after a reset.
         dataset_id:
           type: string
         position:
@@ -1271,12 +1285,14 @@ components:
       properties:
         now:
           $ref: '#/components/schemas/Timestamp'
+          description: The new clock, no later than `9999-12-30T23:59:59Z`.
     ResetRequest:
       type: object
       additionalProperties: false
       properties:
         clock:
           $ref: '#/components/schemas/Timestamp'
+          description: The clock after the reset, no later than `9999-12-30T23:59:59Z`.
     CredentialUpdate:
       type: object
       additionalProperties: false
@@ -1307,13 +1323,14 @@ components:
       description: |
         RFC 9457 problem details. `code` is stable and is what clients act on;
         `title` is fixed for each code; `detail` explains this occurrence and
-        may change between versions. `parameter` names the query parameter or
-        body field at fault: the parameter or field for `unknown_parameter`,
-        `missing_parameter`, `invalid_parameter`, and `cutoff_in_future`
-        (`period_end` for an empty or reversed period range, null for a body
-        that is not a JSON object); `page_token` for the three page-token
-        codes; `after` for `position_ahead` and `position_expired`; `now` for
-        `clock_backwards`; null for every other code.
+        may change between versions. `parameter` names the query parameter,
+        body field, or path parameter at fault: the parameter or field for
+        `unknown_parameter`, `missing_parameter`, `invalid_parameter`, and
+        `cutoff_in_future` (`period_end` for an empty or reversed period
+        range, null for a body that is not a JSON object); `page_token` for
+        the three page-token codes; `after` for `position_ahead` and
+        `position_expired`; `now` for `clock_backwards`; null for every other
+        code.
       required: [status, code, title, detail, parameter]
       properties:
         status:

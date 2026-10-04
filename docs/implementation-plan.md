@@ -6,7 +6,7 @@ leaves out, and the checks that prove it done. The specifications are
 [`spec/data-contract.md`](../spec/data-contract.md),
 [`spec/api.md`](../spec/api.md), [`spec/openapi.yaml`](../spec/openapi.yaml),
 and [`spec/conformance.md`](../spec/conformance.md), at contract version
-0.2.0. Read [`AGENTS.md`](../AGENTS.md) before starting any of them.
+0.3.0. Read [`AGENTS.md`](../AGENTS.md) before starting any of them.
 
 Pull requests 1 to 7 complete stage 1, the demo API the SDKs use. Pull
 requests 8 to 10 complete stage 2, the full API.
@@ -51,9 +51,10 @@ A pull request may refine this layout if it explains why.
 
 ### 1. Load the fixtures and enforce the invariants
 
-- Create the Go module `github.com/nslaughter/financial-data-api` and a CI
-  workflow that runs `gofmt` (failing on unformatted files), `go vet ./...`,
-  and `go test ./...`.
+- Create the Go module `github.com/nslaughter/financial-data-api`, requiring
+  Go 1.22 or later as the canonical export form does, and a CI workflow that
+  runs `gofmt` (failing on unformatted files), `go vet ./...`, and
+  `go test ./...`.
 - Embed the fixtures and load them into typed records. Nullable fields
   (`value`, `missing_reason`) are pointers, not empty strings.
 - Implement all 15 [invariants](../spec/data-contract.md#invariants). A
@@ -77,6 +78,10 @@ Out of scope: HTTP, the clock, and any query logic.
   - `position_checks` and `read_checks` in `change-stream.json`;
   - the two export digests in [`spec/api.md`](../spec/api.md#exports).
   The tests read the files from `expected/`; they do not copy their values.
+- A test checks the canonical form's string escaping, which the fixtures do
+  not exercise: strings containing `"`, `\`, every character from U+0000 to
+  U+001F, U+007F, U+0080 to U+009F, U+2028, U+2029, `<`, `>`, and `&` encode
+  as [`spec/api.md`](../spec/api.md#exports) specifies.
 
 Out of scope: HTTP, parameters, errors, and tokens.
 
@@ -84,17 +89,25 @@ Out of scope: HTTP, parameters, errors, and tokens.
 
 - Implement [`spec/conformance.md`](../spec/conformance.md) completely:
   - query checks, `pages_with_page_size_10`, position and read checks, release
-    timing, and scenarios;
+    timing, and scenarios, including a scenario's `stages` member;
   - the matching rule and references;
   - failure reports.
 - Validate every JSON response against `spec/openapi.yaml`, in addition to
   the expected values. The subset match ignores fields an expectation does
   not name. Schema validation is what catches a field that is omitted
-  instead of `null`.
+  instead of `null`. A response to a request that matches no operation (an
+  unknown path, or a method the path does not support) follows the
+  OpenAPI document's rules for every path: validate its body against
+  `#/components/schemas/Problem`, and a `405` also against
+  `#/components/responses/MethodNotAllowed`, whose `Allow` header is
+  required.
 - Flags:
   - `--base-url`;
-  - `--stage` (runs every file the stage table requires of the API);
-  - `--file` (repeatable);
+  - `--stage` (required; runs every file the stage table requires of the API
+    at that stage, skipping a scenario whose `stages` member does not list
+    it);
+  - `--file` (repeatable; runs only the named files, still at the stage that
+    `--stage` gives);
   - `--check` (runs checks whose name contains a substring).
 - Tests use a fake server built with `net/http/httptest`, and cover:
   - matching, including type-sensitive comparison and array length;
@@ -102,14 +115,17 @@ Out of scope: HTTP, parameters, errors, and tokens.
   - reference resolution, including references to the current step in
     `expect`;
   - repeated query parameters;
-  - NDJSON bodies.
+  - NDJSON bodies;
+  - a scenario with `stages`, which runs only at a stage it lists.
 
 Out of scope: running against the real server; nothing serves the API yet.
 
 ### 4. Serve the foundation: routing, errors, the clock, authentication, test control, and the catalog
 
-- Read `PORT`, `CLOCK_START`, `TEST_CONTROL`, and `FIXTURES_DIR`. Refuse to
-  start on invalid values or failed invariants.
+- Read `PORT`, `CLOCK_START`, `TEST_CONTROL`, and `FIXTURES_DIR`, treating a
+  variable set to an empty value as unset. Refuse to start on invalid values,
+  including a `CLOCK_START` later than `9999-12-30T23:59:59Z`, or failed
+  invariants.
 - Implement routing, using the error order in
   [Errors](../spec/api.md#errors):
   - `404 unsupported_api_version`;
@@ -127,10 +143,20 @@ Out of scope: running against the real server; nothing serves the API yet.
 - Implement authentication for both credential kinds, with
   `WWW-Authenticate` on every 401.
 - Implement every `/test` endpoint, served only when `TEST_CONTROL=enabled`.
+  `PUT /test/clock` and `POST /test/reset` refuse a clock later than
+  `9999-12-30T23:59:59Z` with `400 invalid_parameter`; `simulated-clock`
+  checks both from step 6.
 - Implement `GET /v1/meta` and the catalog endpoints: datasets and series,
   with `entitled` and `head_position`.
-- Tests: `httptest` tests for routing, error bodies and order, parsing,
-  authentication, and test control.
+- Tests:
+  - `httptest` tests for routing, error bodies and order, parsing,
+    authentication, and test control;
+  - an `httptest` test that a `GET` sent with a body, including a body that
+    is not a JSON object, is answered as if it had none; no conformance file
+    checks this;
+  - the server refuses to start with a `CLOCK_START` later than
+    `9999-12-30T23:59:59Z`;
+  - each of the four variables set to an empty value takes its default.
 
 Out of scope: observations, pagination, and the change stream.
 
@@ -145,7 +171,7 @@ Out of scope: observations, pagination, and the change stream.
   - no empty final page.
 - Entitlement checks on every page.
 - Add a CI job that builds the server, starts it with `TEST_CONTROL=enabled`,
-  and runs the runner on these files:
+  and runs the runner with `--stage 1` on these files:
   - `august-2026-at-cutoffs`, `full-history`, `missing-value`,
     `withdrawal-and-rerelease`, `out-of-order-arrival`,
     `provider-correction`, `late-source-release`;
@@ -159,9 +185,10 @@ parameter.
 
 - `GET /v1/datasets/{dataset_id}/changes`, with retention, `position_ahead`,
   `next_position`, and `head_position`.
-- Switch the CI job to `--stage 1`, which adds `change-stream`,
-  `simulated-clock`, `access-control`, and `request-errors`. Done when every
-  stage 1 file passes.
+- Switch the CI job to `--stage 1` without `--file`, which adds
+  `change-stream`, `simulated-clock`, `access-control`, and `request-errors`,
+  including the stage 1 scenario in which `published_as_of` and
+  `GET /v1/revisions` are refused. Done when every stage 1 file passes.
 
 ### 7. Publish the demo API image
 
@@ -172,7 +199,7 @@ status changes to `Not started`.
 
 - A `Dockerfile` that builds a static binary into a minimal image, with the
   fixtures embedded and the default port exposed. Labels record the contract
-  version (`0.2.0`) and the stage.
+  version (`0.3.0`) and the stage.
 - A release workflow, triggered by a version tag, that:
   - builds the image;
   - runs the stage 1 conformance suite against the container, not only the
@@ -196,7 +223,11 @@ Stage 1 is complete here. The SDKs can pin the image.
   interchangeable between the two endpoints.
 - `GET /v1/release-calendar`.
 - The runner adds `published-as-of`, `revision-history`, `release-calendar`,
-  and `release-timing`. Done when those pass with every stage 1 file.
+  and `release-timing`. Done when those pass with every stage 1 file. The
+  CI job runs with `--stage 2` and a `--file` for each of these files and
+  every stage 1 file: the server now serves `published_as_of` and
+  `GET /v1/revisions`, so the stage 1 scenario in `request-errors` no longer
+  applies.
 
 ### 9. Add exports
 
@@ -205,7 +236,8 @@ Stage 1 is complete here. The SDKs can pin the image.
   - the canonical file bytes, stored or regenerated identically;
   - expiry;
   - entitlement checks on every download;
-  - identifiers never reused after a reset.
+  - identifiers with at least 64 bits from `crypto/rand`, never reused after
+    a reset.
 - The runner adds `export-handoff` and `exports`. Done when every file passes
   with `--stage 2`.
 
