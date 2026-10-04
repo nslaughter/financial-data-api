@@ -9,9 +9,11 @@ fintech, data pipelines, observability, and infrastructure, informed by a
 background in investment research. I help teams turn datasets into APIs whose
 meaning and delivery behavior customers can depend on.
 
-**Status:** Project brief. This repository contains this README and the
-[data contract](spec/data-contract.md), version 0.1.0, with its fixtures and
-expected results.
+**Status:** Specified, not yet implemented. This repository contains the
+[data contract](spec/data-contract.md) (version 0.2.0, draft) with its
+fixtures and expected results, the [API specification](spec/api.md) and its
+[OpenAPI form](spec/openapi.yaml), the [conformance format](spec/conformance.md),
+and the [implementation plan](docs/implementation-plan.md).
 The API, deployment, and runnable demonstrations are planned; nothing described
 here has been implemented or tested yet. The API will be written in Go, and the
 demo API that the SDKs use from the first stage will ship from here as a
@@ -66,6 +68,7 @@ revised to 102.1 on September 10. A proposed record looks like this:
 
 ```json
 {
+  "sequence": 36,
   "series_id": "activity-index",
   "observation_id": "obs_aug26",
   "revision_id": "rev_aug26_1",
@@ -82,7 +85,8 @@ revised to 102.1 on September 10. A proposed record looks like this:
 }
 ```
 
-The September 10 revision keeps `observation_id` and gets a new `revision_id`.
+The September 10 revision keeps `observation_id` and gets a new `revision_id`
+and the next `sequence`, its position in the change stream.
 The period runs from August 1 up to September 1, with the end excluded. A
 decimal string preserves the value's representation, and the unit is explicit.
 `published_at` records source publication, `received_at` the provider's
@@ -153,7 +157,8 @@ Several delivery rules matter as much as the schema:
 
 ## What the repository will contain
 
-- An API specification and data dictionary.
+- An API specification and data dictionary. These are written: see
+  [`spec/`](spec).
 - A local startup command and seeded fixtures.
 - Query, export, and update examples.
 - Contract and authorization checks in CI.
@@ -163,12 +168,14 @@ Several delivery rules matter as much as the schema:
 
 ## A later contract change will test the maintenance work
 
-In the fourth stage, API v1 keeps a `date` field documented as the UTC
-publication date, and v2 replaces it with explicit `published_at`,
-`period_start`, `period_end`, and `available_at` fields. Each query and export
-selects a version, and continuation tokens keep that choice through pagination.
-A request for an unsupported version fails with an explanation instead of
-falling back to a different data model.
+In the fourth stage, the API makes a breaking change to its data model and
+introduces v2 beside v1. API v1 already uses explicit `published_at`,
+`period_start`, `period_end`, and `available_at` fields, so the change will be
+a different one; choosing it is the contract's
+[open question](spec/data-contract.md#open-questions). Each query and export
+selects a version, and continuation tokens keep that choice through
+pagination. A request for an unsupported version fails with an explanation
+instead of falling back to a different data model.
 
 The checks run through direct HTTP requests as well as the SDK, so a
 client-side workaround cannot hide a server error. The recovery rehearsal
