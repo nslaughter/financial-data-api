@@ -44,7 +44,7 @@ contract version built in. It reads these environment variables:
 | --- | --- | --- |
 | `PORT` | `8080` | TCP port for HTTP. |
 | `CLOCK_START` | `2026-10-01T00:00:00Z` | The simulated clock at startup and after a reset without a clock. Must be a timestamp in the format below. |
-| `TEST_CONTROL` | `disabled` | `enabled` serves the `/test` endpoints. Any other value is refused at startup. |
+| `TEST_CONTROL` | `disabled` | `enabled` serves the `/test` endpoints, and `disabled` does not. Any other value is refused at startup. |
 | `FIXTURES_DIR` | the fixtures built into the image | Directory containing the files from `fixtures/`. |
 
 At startup the server loads every fixture file and checks the
