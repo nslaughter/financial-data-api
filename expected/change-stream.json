@@ -1,7 +1,7 @@
 {
-  "contract_version": "0.1.0",
+  "contract_version": "0.2.0",
   "case": "change-stream",
-  "description": "Positions in the change stream and the revisions a consumer reads after a position. A position P means every revision with sequence <= P has been applied.",
+  "description": "Positions in the change stream, the revisions a consumer reads after a position, and retention. A position P means every revision with sequence <= P has been applied.",
   "position_checks": [
     {
       "name": "just before two revisions become available together",
@@ -39,6 +39,8 @@
         {"sequence": 19, "revision_id": "rev_jun25_1", "change_type": "initial_release"},
         {"sequence": 20, "revision_id": "rev_may25_3", "change_type": "source_revision"}
       ],
+      "expected_next_position": 20,
+      "expected_head_position": 37,
       "reason": "Revisions are read in sequence order. Sequence, not available_at, orders 19 and 20."
     },
     {
@@ -50,6 +52,8 @@
         {"sequence": 26, "revision_id": "rev_nov25_1", "change_type": "initial_release"},
         {"sequence": 27, "revision_id": "rev_dec25_1", "change_type": "initial_release"}
       ],
+      "expected_next_position": 27,
+      "expected_head_position": 37,
       "reason": "Delivery order differs from precedence for obs_nov25."
     },
     {
@@ -60,6 +64,8 @@
         {"sequence": 29, "revision_id": "rev_feb26_1", "change_type": "initial_release"},
         {"sequence": 30, "revision_id": "rev_feb26_2", "change_type": "provider_correction"}
       ],
+      "expected_next_position": 30,
+      "expected_head_position": 37,
       "reason": "A correction is its own revision; the erroneous revision stays in the history."
     },
     {
@@ -67,6 +73,8 @@
       "after_position": 37,
       "limit": null,
       "expected": [],
+      "expected_next_position": 37,
+      "expected_head_position": 37,
       "reason": "No revisions follow the last one."
     }
   ],
@@ -79,6 +87,82 @@
       "expected_current_revision_id": "rev_nov25_2",
       "incorrect_if_applied_by_arrival": "rev_nov25_1",
       "reason": "A consumer that overwrites its current value with each event in delivery order ends on rev_nov25_1 (100.0). Keeping the revision with the highest revision_number leaves rev_nov25_2 (100.2)."
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "an event is retained until 1,095 days after it became available",
+      "clock": "2027-02-02T12:31:09Z",
+      "steps": [
+        {
+          "request": {"path": "/v1/datasets/core-indicators/changes", "query": {"after": "0", "limit": "1"}},
+          "expect": {"status": 200, "body": {"data": [{"sequence": 1, "revision_id": "rev_jan24_1"}], "next_position": 1, "head_position": 37}}
+        }
+      ],
+      "reason": "The first event became available at 2024-02-03T12:31:10Z and expires 1,095 days later, at 2027-02-02T12:31:10Z. One second before, position 0 can still continue."
+    },
+    {
+      "name": "a position expires when the next event is past retention",
+      "clock": "2027-02-02T12:31:10Z",
+      "steps": [
+        {
+          "request": {"path": "/v1/datasets/core-indicators/changes", "query": {"after": "0"}},
+          "expect": {"status": 410, "code": "position_expired", "body": {"parameter": "after"}}
+        },
+        {
+          "request": {"path": "/v1/datasets/core-indicators/changes", "query": {"after": "1", "limit": "1"}},
+          "expect": {"status": 200, "body": {"data": [{"sequence": 2}], "next_position": 2}}
+        }
+      ],
+      "reason": "At the instant the first event expires, a consumer at position 0 must load a fresh snapshot instead of skipping ahead. Position 1 still continues, because event 2 is retained."
+    },
+    {
+      "name": "a caught-up position does not expire",
+      "clock": "2030-01-01T00:00:00Z",
+      "steps": [
+        {
+          "request": {"path": "/v1/datasets/core-indicators/changes", "query": {"after": "37"}},
+          "expect": {"status": 200, "body": {"data": [], "next_position": 37, "head_position": 37}}
+        },
+        {
+          "request": {"path": "/v1/datasets/core-indicators/changes", "query": {"after": "36"}},
+          "expect": {"status": 410, "code": "position_expired", "body": {"parameter": "after"}}
+        }
+      ],
+      "reason": "A consumer at the head has nothing to read, however old the events are. One behind the head, it needs event 37, which is past retention by 2030."
+    },
+    {
+      "name": "a position ahead of the stream is refused",
+      "clock": "2026-09-10T12:30:20Z",
+      "steps": [
+        {
+          "request": {"path": "/v1/datasets/core-indicators/changes", "query": {"after": "37"}},
+          "expect": {"status": 400, "code": "position_ahead", "body": {"parameter": "after"}}
+        },
+        {
+          "request": {"path": "/v1/datasets/core-indicators/changes", "query": {"after": "36"}},
+          "expect": {"status": 200, "body": {"data": [], "next_position": 36, "head_position": 36}}
+        }
+      ],
+      "reason": "At the export snapshot time the head is 36. Position 37 can only come from a later clock, before a reset."
+    },
+    {
+      "name": "events that share an available_at arrive together",
+      "clock": "2025-07-03T12:31:10Z",
+      "steps": [
+        {
+          "request": {"path": "/v1/datasets/core-indicators/changes", "query": {"after": "18"}},
+          "expect": {
+            "status": 200,
+            "body": {
+              "data": [{"sequence": 19, "revision_id": "rev_jun25_1"}, {"sequence": 20, "revision_id": "rev_may25_3"}],
+              "next_position": 20,
+              "head_position": 20
+            }
+          }
+        }
+      ],
+      "reason": "Revisions 19 and 20 became available at the same instant; the clock reveals both, and sequence orders them."
     }
   ]
 }
