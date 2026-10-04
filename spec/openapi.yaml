@@ -32,7 +32,10 @@ info:
       `400 missing_parameter`. A body sent with a `GET` is ignored.
     - Faults are reported in this order: routing (404, 405), authentication
       (401), request validation (400 except `position_ahead`), lookup (404),
-      entitlement (403), state (`400 position_ahead`, 409, 410).
+      entitlement (403), state (`400 position_ahead`, 409, 410). The one
+      exception is `PUT /test/credentials/{credential_id}`, which checks the
+      credential's kind and the datasets in its body after lookup and reports
+      them as `400 invalid_parameter`.
     - Every response field is always present; a field without a value is
       `null`. Clients ignore response fields they do not recognize.
     - The server's current time is a simulated clock. Revisions whose
@@ -1307,13 +1310,14 @@ components:
       description: |
         RFC 9457 problem details. `code` is stable and is what clients act on;
         `title` is fixed for each code; `detail` explains this occurrence and
-        may change between versions. `parameter` names the query parameter or
-        body field at fault: the parameter or field for `unknown_parameter`,
-        `missing_parameter`, `invalid_parameter`, and `cutoff_in_future`
-        (`period_end` for an empty or reversed period range, null for a body
-        that is not a JSON object); `page_token` for the three page-token
-        codes; `after` for `position_ahead` and `position_expired`; `now` for
-        `clock_backwards`; null for every other code.
+        may change between versions. `parameter` names the query parameter,
+        body field, or path parameter at fault: the parameter or field for
+        `unknown_parameter`, `missing_parameter`, `invalid_parameter`, and
+        `cutoff_in_future` (`period_end` for an empty or reversed period
+        range, null for a body that is not a JSON object); `page_token` for
+        the three page-token codes; `after` for `position_ahead` and
+        `position_expired`; `now` for `clock_backwards`; null for every other
+        code.
       required: [status, code, title, detail, parameter]
       properties:
         status:

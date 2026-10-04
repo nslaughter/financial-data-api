@@ -147,7 +147,8 @@ An error response has `Content-Type: application/problem+json` and this body:
 
 `code` is stable and is what clients act on. `title` is fixed for each code.
 `detail` explains this occurrence and may change between versions.
-`parameter` names the query parameter or body field at fault:
+`parameter` names the query parameter, body field, or path parameter at
+fault:
 
 - `unknown_parameter`, `missing_parameter`, `invalid_parameter`, and
   `cutoff_in_future` name the parameter or field. An empty or reversed period
@@ -185,13 +186,19 @@ When a request has several faults, the server reports the first in this order:
    path (including `/test` paths when test control is disabled), or
    `405 method_not_allowed`.
 2. **Authentication.** `401 unauthenticated`.
-3. **Request validation.** Any `400` except `position_ahead`. Where several
-   validation faults apply, the server reports any one of them.
+3. **Request validation.** Any `400` except `position_ahead` and the two
+   checks of `PUT /test/credentials/{credential_id}` described below. Where
+   several validation faults apply, the server reports any one of them.
 4. **Lookup.** `404 not_found` for a series, dataset, export, file, or
    credential named by the request.
 5. **Entitlement.** `403 not_entitled`.
 6. **State.** `400 position_ahead`, `409 clock_backwards`, and the `410`
    errors.
+
+`PUT /test/credentials/{credential_id}` checks the credential's kind and the
+datasets in its body after it looks up the credential, and reports a
+test-control credential or an unknown dataset as `400 invalid_parameter`,
+not `404 not_found`, as that endpoint describes.
 
 ### Authentication and entitlements
 
