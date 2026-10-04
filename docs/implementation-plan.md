@@ -151,6 +151,9 @@ Out of scope: running against the real server; nothing serves the API yet.
 - Tests:
   - `httptest` tests for routing, error bodies and order, parsing,
     authentication, and test control;
+  - an `httptest` test that a `GET` sent with a body, including a body that
+    is not a JSON object, is answered as if it had none; no conformance file
+    checks this;
   - the server refuses to start with a `CLOCK_START` later than
     `9999-12-30T23:59:59Z`;
   - each of the four variables set to an empty value takes its default.
