@@ -1,7 +1,7 @@
 # Data contract: synthetic activity index
 
-**Status:** Version 0.2.0, draft. It becomes `contract-v0.2.0` when merged;
-version 0.1.0 is tagged `contract-v0.1.0`. All data is synthetic and describes
+**Status:** Version 0.2.0, tagged `contract-v0.2.0` on October 4, 2026.
+Version 0.1.0 is tagged `contract-v0.1.0`. All data is synthetic and describes
 no real economy, source, or provider.
 
 This contract defines the dataset shared by the provider demonstration: the

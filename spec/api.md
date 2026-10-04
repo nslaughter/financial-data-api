@@ -1,8 +1,7 @@
 # API specification: financial data API v1
 
-**Status:** Version 0.2.0, draft, versioned with the
-[data contract](data-contract.md). It becomes part of `contract-v0.2.0` when
-merged.
+**Status:** Version 0.2.0, tagged `contract-v0.2.0` with the
+[data contract](data-contract.md).
 
 This document specifies how the demo API (stage 1) and the full API (stage 2)
 are called and how they behave. The [data contract](data-contract.md) defines
