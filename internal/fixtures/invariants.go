@@ -60,9 +60,8 @@ func parseTimestamp(s string) (time.Time, bool) {
 }
 
 // Check returns every invariant of the data contract that f breaks, in rule
-// order and then in file order. Rules that compare dates or timestamps as
-// instants skip a value that invariant 14 rejects, so they do not repeat its
-// report.
+// order. Rules that compare dates or timestamps as instants skip a value that
+// invariant 14 rejects, so they do not repeat its report.
 func Check(f *Fixtures) Violations {
 	c := newChecker(f)
 	c.uniqueIdentities()
