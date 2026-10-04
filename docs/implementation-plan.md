@@ -84,7 +84,7 @@ Out of scope: HTTP, parameters, errors, and tokens.
 
 - Implement [`spec/conformance.md`](../spec/conformance.md) completely:
   - query checks, `pages_with_page_size_10`, position and read checks, release
-    timing, and scenarios;
+    timing, and scenarios, including a scenario's `stages` member;
   - the matching rule and references;
   - failure reports.
 - Validate every JSON response against `spec/openapi.yaml`, in addition to
@@ -98,8 +98,11 @@ Out of scope: HTTP, parameters, errors, and tokens.
   required.
 - Flags:
   - `--base-url`;
-  - `--stage` (runs every file the stage table requires of the API);
-  - `--file` (repeatable);
+  - `--stage` (required; runs every file the stage table requires of the API
+    at that stage, skipping a scenario whose `stages` member does not list
+    it);
+  - `--file` (repeatable; runs only the named files, still at the stage that
+    `--stage` gives);
   - `--check` (runs checks whose name contains a substring).
 - Tests use a fake server built with `net/http/httptest`, and cover:
   - matching, including type-sensitive comparison and array length;
@@ -107,7 +110,8 @@ Out of scope: HTTP, parameters, errors, and tokens.
   - reference resolution, including references to the current step in
     `expect`;
   - repeated query parameters;
-  - NDJSON bodies.
+  - NDJSON bodies;
+  - a scenario with `stages`, which runs only at a stage it lists.
 
 Out of scope: running against the real server; nothing serves the API yet.
 
@@ -157,7 +161,7 @@ Out of scope: observations, pagination, and the change stream.
   - no empty final page.
 - Entitlement checks on every page.
 - Add a CI job that builds the server, starts it with `TEST_CONTROL=enabled`,
-  and runs the runner on these files:
+  and runs the runner with `--stage 1` on these files:
   - `august-2026-at-cutoffs`, `full-history`, `missing-value`,
     `withdrawal-and-rerelease`, `out-of-order-arrival`,
     `provider-correction`, `late-source-release`;
@@ -171,9 +175,10 @@ parameter.
 
 - `GET /v1/datasets/{dataset_id}/changes`, with retention, `position_ahead`,
   `next_position`, and `head_position`.
-- Switch the CI job to `--stage 1`, which adds `change-stream`,
-  `simulated-clock`, `access-control`, and `request-errors`. Done when every
-  stage 1 file passes.
+- Switch the CI job to `--stage 1` without `--file`, which adds
+  `change-stream`, `simulated-clock`, `access-control`, and `request-errors`,
+  including the stage 1 scenario in which `published_as_of` and
+  `GET /v1/revisions` are refused. Done when every stage 1 file passes.
 
 ### 7. Publish the demo API image
 
@@ -208,7 +213,11 @@ Stage 1 is complete here. The SDKs can pin the image.
   interchangeable between the two endpoints.
 - `GET /v1/release-calendar`.
 - The runner adds `published-as-of`, `revision-history`, `release-calendar`,
-  and `release-timing`. Done when those pass with every stage 1 file.
+  and `release-timing`. Done when those pass with every stage 1 file. The
+  CI job runs with `--stage 2` and a `--file` for each of these files and
+  every stage 1 file: the server now serves `published_as_of` and
+  `GET /v1/revisions`, so the stage 1 scenario in `request-errors` no longer
+  applies.
 
 ### 9. Add exports
 

@@ -21,7 +21,8 @@ them and compares results, so that every runner reaches the same verdict.
 
 The [stage table](data-contract.md#implementations-and-conformance) says which
 files each runner must pass from which stage. A runner given a stage runs
-every file required at or before it.
+every file required at or before it, except the scenarios whose `stages`
+member does not list that stage (see [Scenarios](#scenarios)).
 
 ## Rules for every check
 
@@ -111,8 +112,14 @@ For each check in `release-timing.json`, at the default clock:
 ## Scenarios
 
 A file's `scenarios` array holds scenarios. A scenario has a `name`, a
-`reason`, an optional `clock` for its reset, and `steps`, executed in order.
-A scenario passes when every step passes; the first failing step ends it.
+`reason`, an optional `clock` for its reset, an optional `stages`, and
+`steps`, executed in order. A scenario passes when every step passes; the
+first failing step ends it.
+
+`stages`, when present, is an array of stage numbers, such as `[1]`. A runner
+runs the scenario only when the stage it was given is listed. A scenario
+without `stages` runs whenever its file runs. SDK runners honor `stages` as
+the API runner does.
 
 SDK runners may also check a scenario's optional `expected_local_copy`: after
 loading the scenario's export file and applying the changes it reads, the

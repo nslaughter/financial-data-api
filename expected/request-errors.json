@@ -37,6 +37,21 @@
       "reason": "An endpoint accepts only the parameters it defines. The change stream takes limit, not page_size."
     },
     {
+      "name": "a stage 1 server refuses stage 2 parameters and paths",
+      "stages": [1],
+      "steps": [
+        {
+          "request": {"path": "/v1/observations", "query": {"series_id": "activity-index", "published_as_of": "2026-09-04T00:00:00Z"}},
+          "expect": {"status": 400, "code": "unknown_parameter", "body": {"parameter": "published_as_of"}}
+        },
+        {
+          "request": {"path": "/v1/revisions", "query": {"series_id": "activity-index"}},
+          "expect": {"status": 404, "code": "not_found"}
+        }
+      ],
+      "reason": "published_as_of and GET /v1/revisions are stage 2. A stage 1 server refuses the cutoff instead of silently returning the latest data, and has no such path. A stage 2 server answers both, so this scenario runs only at stage 1."
+    },
+    {
       "name": "required parameters",
       "steps": [
         {

@@ -396,7 +396,7 @@ contract version.
 | [`simulated-clock.json`](../expected/simulated-clock.json) | Revisions after the clock are invisible; moving the clock reveals them; resetting restores the start; the latest clock is accepted and a later one refused |
 | [`pagination.json`](../expected/pagination.json) | Pages keep their snapshot while data changes, tokens are bound to their query and credential, and snapshots expire |
 | [`access-control.json`](../expected/access-control.json) | Missing, unknown, and revoked keys; refusals without entitlement, including on resumed pages; an empty result distinct from a refusal |
-| [`request-errors.json`](../expected/request-errors.json) | Unknown, missing, and malformed parameters and bodies, period ranges, cutoffs after the clock, unsupported versions, and the order in which errors are reported |
+| [`request-errors.json`](../expected/request-errors.json) | Unknown, missing, and malformed parameters and bodies, period ranges, cutoffs after the clock, unsupported versions, stage 2 parameters and paths refused by a stage 1 server, and the order in which errors are reported |
 | [`published-as-of.json`](../expected/published-as-of.json) | What the source had published by each cutoff, compared with what the API was serving at the same instant |
 | [`revision-history.json`](../expected/revision-history.json) | Every revision of an observation, including superseded and erroneous ones |
 | [`release-calendar.json`](../expected/release-calendar.json) | Scheduled release times |
@@ -428,6 +428,11 @@ Not every check applies from the first stage:
 | `august-2026-at-cutoffs`, `full-history`, `missing-value`, `withdrawal-and-rerelease`, `out-of-order-arrival`, `provider-correction`, `late-source-release`, `change-stream`, `simulated-clock`, `pagination`, `access-control`, `request-errors` | Stage 1 | Stage 1 | — |
 | `published-as-of`, `revision-history`, `release-calendar`, `export-handoff`, `exports` | Stage 2 | When each SDK adds the feature | — |
 | `release-timing` | Stage 2, computed from the revision history and the release calendar | — | Stage 3 |
+
+A scenario can also name the stages at which it runs, with the `stages`
+member of the [conformance format](conformance.md#scenarios). The scenario in
+`request-errors` that checks a stage 1 server's refusal of `published_as_of`
+and `GET /v1/revisions` runs only at stage 1.
 
 ## Versioning
 
