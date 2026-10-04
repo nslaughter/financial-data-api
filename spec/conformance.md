@@ -21,9 +21,11 @@ them and compares results, so that every runner reaches the same verdict.
 - **The monitor** runs `release-timing`.
 
 The [stage table](data-contract.md#implementations-and-conformance) says which
-files each runner must pass from which stage. A runner given a stage runs
-every file required at or before it, except the scenarios whose `stages`
-member does not list that stage (see [Scenarios](#scenarios)).
+files each runner must pass from which stage. The API runner and an SDK
+runner are given the stage of the server they run against, whatever features
+the SDK under test has. A runner given a stage runs every file required at or
+before it, except the scenarios whose `stages` member does not list that
+stage (see [Scenarios](#scenarios)).
 
 ## Rules for every check
 
