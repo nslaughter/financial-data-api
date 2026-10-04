@@ -10,8 +10,8 @@ background in investment research. I help teams turn datasets into APIs whose
 meaning and delivery behavior customers can depend on.
 
 **Status:** Specified, not yet implemented. This repository contains the
-[data contract](spec/data-contract.md) (version 0.2.0, tagged
-`contract-v0.2.0`) with its
+[data contract](spec/data-contract.md) (version 0.3.0, tagged
+`contract-v0.3.0`) with its
 fixtures and expected results, the [API specification](spec/api.md) and its
 [OpenAPI form](spec/openapi.yaml), the [conformance format](spec/conformance.md),
 and the [implementation plan](docs/implementation-plan.md).

@@ -1,6 +1,6 @@
 # Conformance format
 
-**Status:** Version 0.2.0, tagged `contract-v0.2.0` with the
+**Status:** Version 0.3.0, tagged `contract-v0.3.0` with the
 [data contract](data-contract.md).
 
 The files in [`expected/`](../expected) are one conformance suite for the API,

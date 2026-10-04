@@ -6,7 +6,7 @@ leaves out, and the checks that prove it done. The specifications are
 [`spec/data-contract.md`](../spec/data-contract.md),
 [`spec/api.md`](../spec/api.md), [`spec/openapi.yaml`](../spec/openapi.yaml),
 and [`spec/conformance.md`](../spec/conformance.md), at contract version
-0.2.0. Read [`AGENTS.md`](../AGENTS.md) before starting any of them.
+0.3.0. Read [`AGENTS.md`](../AGENTS.md) before starting any of them.
 
 Pull requests 1 to 7 complete stage 1, the demo API the SDKs use. Pull
 requests 8 to 10 complete stage 2, the full API.
@@ -199,7 +199,7 @@ status changes to `Not started`.
 
 - A `Dockerfile` that builds a static binary into a minimal image, with the
   fixtures embedded and the default port exposed. Labels record the contract
-  version (`0.2.0`) and the stage.
+  version (`0.3.0`) and the stage.
 - A release workflow, triggered by a version tag, that:
   - builds the image;
   - runs the stage 1 conformance suite against the container, not only the

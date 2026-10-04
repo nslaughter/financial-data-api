@@ -1,8 +1,8 @@
 # Data contract: synthetic activity index
 
-**Status:** Version 0.2.0, tagged `contract-v0.2.0` on October 4, 2026.
-Version 0.1.0 is tagged `contract-v0.1.0`. All data is synthetic and describes
-no real economy, source, or provider.
+**Status:** Version 0.3.0, tagged `contract-v0.3.0`. Earlier versions are
+tagged `contract-v0.2.0` and `contract-v0.1.0`, both on October 4, 2026. All
+data is synthetic and describes no real economy, source, or provider.
 
 This contract defines the dataset shared by the provider demonstration: the
 [Python](https://github.com/nslaughter/financial-data-sdk-python),
@@ -43,9 +43,9 @@ disagreement instead of choosing one.
 
 - A **dataset** is a group of series licensed together. Entitlements, the
   change stream, and exports are per dataset. `core-indicators` is the only
-  dataset in version 0.2.
+  dataset in version 0.3.
 - A **series** is a sequence of measurements with one meaning, unit, and
-  frequency. `activity-index` is the only series in version 0.2.
+  frequency. `activity-index` is the only series in version 0.3.
 - An **observation** is the series' measurement for one period. Its identity
   stays fixed while its value is revised.
 - A **revision** is one version of an observation. The first release, each
@@ -76,7 +76,7 @@ disagreement instead of choosing one.
 | `dataset_id` | string | The dataset the series belongs to. Entitlements are granted per dataset. |
 | `name` | string | Display name. |
 | `description` | string | What the series measures. |
-| `frequency` | string | `monthly` for every series in version 0.2. |
+| `frequency` | string | `monthly` for every series in version 0.3. |
 | `unit` | string | Unit of every value in the series. |
 | `base_period` | string | Reference period for an index. For `activity-index`, the 2025 values average 100. |
 | `seasonal_adjustment` | string | `seasonally_adjusted` or `not_seasonally_adjusted`. |
@@ -181,7 +181,7 @@ the rule.
   representation must not convert it through binary floating point. The
   source publishes `activity-index` to one decimal place.
 - A released observation without a number has a null `value` and a
-  `missing_reason`. Version 0.2 uses one reason, `not_collected`: the source
+  `missing_reason`. Version 0.3 uses one reason, `not_collected`: the source
   published the period without a value because the data was not collected.
   Clients must accept reasons they do not recognize.
 - A null value differs from zero and from an absent observation. A query
@@ -204,7 +204,7 @@ Keeping `provider_correction` distinct from `source_revision` lets a customer
 tell a new estimate from the source apart from a fix to data the provider
 served.
 
-In version 0.2, a `provider_correction` may only fix the observation's
+In version 0.3, a `provider_correction` may only fix the observation's
 highest-numbered revision at the time of the correction, and it takes the next
 `revision_number`. Correcting a revision the source has already superseded
 requires a later contract version, which would add a field identifying the
@@ -448,6 +448,32 @@ the clock, pagination, access control, request errors, the revision history,
 the release calendar, and exports. It restructures `export-handoff` as
 scenarios and adds next and head positions to the change-stream reads. No
 fixture record or earlier expected record changed.
+
+Version 0.3.0 corrects errors that a review of the whole contract found and
+applies decisions 26 to 32. `TEST_CONTROL=disabled` is accepted at startup,
+an environment variable set to an empty value takes its default, and the
+clock has a latest value. The entitlement exemption names all four catalog
+endpoints, `PUT /test/credentials/{credential_id}` is named as the one
+exception to the error order, `parameter` can name a path parameter, export
+identifiers carry at least 64 bits from a cryptographically secure random
+source, and export files escape strings exactly as Go 1.22 and later
+`encoding/json` does with `SetEscapeHTML(false)`. The conformance format adds
+the scenario member `stages`, compares `expected_local_copy` by observation,
+has SDK runners run the position and read checks, and counts the
+change-stream check kinds correctly, and the first export line is stated
+only for exports at position 1 or later. New scenarios check that period
+filters match whole periods (`request-errors`, `revision-history`, and
+`release-calendar`), that export identifiers are never reused (`exports`),
+that a malformed or absent request body and, at stage 1 only, stage 2
+parameters and paths are refused (`request-errors`), and the clock's latest
+value (`simulated-clock`). Earlier expected records also changed. Five
+existing steps now expect `parameter` as well as `code`: the empty and
+reversed period ranges in `request-errors` (`period_end`), `clock_backwards`
+in `simulated-clock` (`now`), and the two credential refusals in
+`access-control` (`credential_id` and `datasets`); the reasons of their
+scenarios say so. Every `contract_version`, including those in the expected
+`/v1/meta` and export manifest bodies, reads `0.3.0`. No fixture record
+changed.
 
 ## Decisions
 

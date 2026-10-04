@@ -1,12 +1,12 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "access-control",
   "description": "Every /v1 request except /v1/meta needs an active customer key, and every data request needs an entitlement to the dataset, checked again on resumed pages.",
   "scenarios": [
     {
       "name": "meta needs no key",
       "steps": [
-        {"request": {"path": "/v1/meta", "credential": null}, "expect": {"status": 200, "body": {"api_version": "v1", "contract_version": "0.2.0"}}}
+        {"request": {"path": "/v1/meta", "credential": null}, "expect": {"status": 200, "body": {"api_version": "v1", "contract_version": "0.3.0"}}}
       ],
       "reason": "The readiness check works before a client has credentials."
     },

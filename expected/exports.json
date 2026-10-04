@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "exports",
   "description": "Exports are retained, repeatable, protected like queries, and expire. The file bytes follow the canonical form in the API specification, so their size and SHA-256 digest are fixed.",
   "scenarios": [

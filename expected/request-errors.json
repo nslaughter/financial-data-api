@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "request-errors",
   "description": "Requests the API refuses, the error each returns, and the order in which faults are reported. All run at the default clock.",
   "scenarios": [

@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "full-history",
   "description": "All 32 observations, January 2024 through August 2026, at the September 4 research date and at the latest state. Results are ordered by period_start. With a page size of 10, they span four pages, so an interruption on the fourth page can be exercised.",
   "pages_with_page_size_10": [

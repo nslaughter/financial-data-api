@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: Financial data API
-  version: 0.2.0
+  version: 0.3.0
   summary: Requests and responses of the demo API (stage 1) and the full API (stage 2).
   description: |
-    Machine-readable form of [the API specification](api.md), version 0.2.0,
+    Machine-readable form of [the API specification](api.md), version 0.3.0,
     versioned with [the data contract](data-contract.md).
 
     `api.md` governs behavior, and this document must agree with it. If an
@@ -80,7 +80,7 @@ paths:
                   value:
                     api_version: v1
                     supported_api_versions: [v1]
-                    contract_version: 0.2.0
+                    contract_version: 0.3.0
                     server_time: '2026-10-01T00:00:00Z'
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -899,7 +899,7 @@ components:
         created_at: '2026-09-10T12:30:20Z'
         expires_at: '2026-09-11T12:30:20Z'
         api_version: v1
-        contract_version: 0.2.0
+        contract_version: 0.3.0
         coverage:
           series_ids: [activity-index]
           observation_count: 32
@@ -1092,7 +1092,7 @@ components:
           type: string
         frequency:
           type: string
-          description: '`monthly` for every series in contract version 0.2.'
+          description: '`monthly` for every series in contract version 0.3.'
         unit:
           type: string
         base_period:

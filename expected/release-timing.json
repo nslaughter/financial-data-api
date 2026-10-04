@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "release-timing",
   "description": "Scheduled, published, and first-available times for releases a delivery monitor must classify. first_published_at is the earliest published_at among the period's revisions. first_available_at is the earliest available_at. source_delay_seconds is first_published_at minus scheduled_at. availability_delay_seconds is first_available_at minus first_published_at.",
   "checks": [

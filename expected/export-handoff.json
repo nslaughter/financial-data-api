@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "export-handoff",
   "description": "A customer exports a snapshot at 2026-09-10T12:30:20Z. The export file finishes writing at 12:30:50. The August revision becomes available at 12:30:40, between the two.",
   "scenarios": [
@@ -19,7 +19,7 @@
               "created_at": "2026-09-10T12:30:20Z",
               "expires_at": "2026-09-11T12:30:20Z",
               "api_version": "v1",
-              "contract_version": "0.2.0",
+              "contract_version": "0.3.0",
               "coverage": {
                 "series_ids": ["activity-index"],
                 "observation_count": 32,

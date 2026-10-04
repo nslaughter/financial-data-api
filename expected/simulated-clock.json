@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "simulated-clock",
   "description": "The demo API serves only revisions whose available_at is at or before its simulated clock. Test control moves the clock forward and resets it.",
   "scenarios": [
@@ -11,7 +11,7 @@
           "request": {"path": "/v1/meta", "credential": null},
           "expect": {
             "status": 200,
-            "body": {"api_version": "v1", "supported_api_versions": ["v1"], "contract_version": "0.2.0", "server_time": "2026-09-10T12:30:20Z"}
+            "body": {"api_version": "v1", "supported_api_versions": ["v1"], "contract_version": "0.3.0", "server_time": "2026-09-10T12:30:20Z"}
           }
         }
       ],

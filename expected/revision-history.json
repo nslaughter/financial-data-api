@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "revision-history",
   "description": "GET /v1/revisions returns every visible revision, including superseded, withdrawn, and erroneous ones, ordered by period_start and revision_number.",
   "scenarios": [

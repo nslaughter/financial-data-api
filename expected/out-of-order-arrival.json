@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "out-of-order-arrival",
   "description": "The November 2025 initial release (100.0) failed the provider's validation and was reprocessed the next day. By then the source's revision (100.2) had already become available. The revision takes precedence even though it arrived first.",
   "checks": [

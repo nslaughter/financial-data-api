@@ -1,6 +1,6 @@
 # API specification: financial data API v1
 
-**Status:** Version 0.2.0, tagged `contract-v0.2.0` with the
+**Status:** Version 0.3.0, tagged `contract-v0.3.0` with the
 [data contract](data-contract.md).
 
 This document specifies how the demo API (stage 1) and the full API (stage 2)
@@ -320,7 +320,7 @@ serves as the readiness check.
 {
   "api_version": "v1",
   "supported_api_versions": ["v1"],
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "server_time": "2026-10-01T00:00:00Z"
 }
 ```
@@ -558,7 +558,7 @@ its body and a `Location` header holding the manifest's path,
   "created_at": "2026-09-10T12:30:20Z",
   "expires_at": "2026-09-11T12:30:20Z",
   "api_version": "v1",
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "coverage": {
     "series_ids": ["activity-index"],
     "observation_count": 32,

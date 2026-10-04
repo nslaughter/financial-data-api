@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "case": "withdrawal-and-rerelease",
   "description": "May 2025 is released as 100.6, withdrawn by the source on June 20 after a collection error, and re-released as 100.1 with the June release on July 3. While withdrawn, the observation is returned as the withdrawal revision, with a null value.",
   "checks": [
