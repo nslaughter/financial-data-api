@@ -1,7 +1,7 @@
 # Data contract: synthetic activity index
 
-**Status:** Draft for review, proposed version 0.1.0. All data is synthetic and
-describes no real economy, source, or provider.
+**Status:** Version 0.1.0, tagged `contract-v0.1.0` on October 4, 2026. All
+data is synthetic and describes no real economy, source, or provider.
 
 This contract defines the dataset shared by the provider demonstration: the
 [Python](https://github.com/nslaughter/financial-data-sdk-python),
@@ -309,9 +309,9 @@ Not every check applies from the first stage:
 ## Versioning
 
 The contract, fixtures, and expected results are versioned together. Each
-file records `contract_version`. Once this draft is approved, it will be
-tagged `contract-v0.1.0`; the SDKs, the demo API image, and the monitor each
-pin a tag. Any change to a fixture or an expected result gets a new version, which
+file records `contract_version`, and each version is tagged
+`contract-v<version>`, starting with `contract-v0.1.0`. The SDKs, the demo API
+image, and the monitor each pin a tag. Any change to a fixture or an expected result gets a new version, which
 consumers adopt deliberately.
 
 ## Decisions

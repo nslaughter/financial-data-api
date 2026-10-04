@@ -9,8 +9,9 @@ fintech, data pipelines, observability, and infrastructure, informed by a
 background in investment research. I help teams turn datasets into APIs whose
 meaning and delivery behavior customers can depend on.
 
-**Status:** Project brief. This repository contains this README and a draft
-[data contract](spec/data-contract.md) with its fixtures and expected results.
+**Status:** Project brief. This repository contains this README and the
+[data contract](spec/data-contract.md), version 0.1.0, with its fixtures and
+expected results.
 The API, deployment, and runnable demonstrations are planned; nothing described
 here has been implemented or tested yet. The API will be written in Go, and the
 demo API that the SDKs use from the first stage will ship from here as a
