@@ -26,8 +26,9 @@ The README describes the project for people; it is not a specification.
   it, quoting the passages, instead of choosing an interpretation or editing
   an expectation to match the code.
 - **Follow the plan.** Do one pull request from the implementation plan at a
-  time, in order, within its stated scope. Note anything you deferred in the
-  pull request description.
+  time, in order, within its stated scope, as described in
+  [Doing the next item](#doing-the-next-item). Note anything you deferred in
+  the pull request description.
 - **Done means verified.** A pull request is done when `gofmt -l .` prints
   nothing, `go vet ./...` and `go test ./...` pass, and the conformance files
   the plan lists for it pass against the real server. Report results as they
@@ -61,6 +62,29 @@ The README describes the project for people; it is not a specification.
 | Vet and test | `go vet ./... && go test ./...` |
 | Run the server with test control | `TEST_CONTROL=enabled go run ./cmd/server` |
 | Run the conformance suite | `go run ./cmd/conformance --base-url http://localhost:8080 --stage 1` |
+
+## Doing the next item
+
+When asked to do the next item:
+
+1. Update `main` (`git checkout main && git pull --ff-only`) and read the
+   **Progress** table in
+   [`docs/implementation-plan.md`](docs/implementation-plan.md). The next
+   item is the first step whose status is not `Done`.
+2. Stop and report instead of starting if any of these holds:
+   - `gh pr list --state open` shows a pull request for that step; report its
+     state, because the operator reviews and merges it;
+   - the step's status is `Needs operator decision`; name the decision.
+3. Create a branch named `step-<N>-<short-slug>`, such as
+   `step-1-fixtures`, and implement the step within its scope.
+4. Run every check the step lists. If a check fails because a specification
+   seems wrong or ambiguous, stop and report it as the
+   [Rules](#rules) require; do not open a pull request built on a guess.
+5. In the same branch, set the step's status to `Done` in the Progress table.
+6. Push, and open a pull request as described below. Then add its number to
+   the step's row in a follow-up commit on the same branch.
+7. Do not merge. Report the pull request's link, the checks you ran and their
+   results, and anything deferred.
 
 ## Commits and pull requests
 

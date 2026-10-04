@@ -11,6 +11,27 @@ and [`spec/conformance.md`](../spec/conformance.md), at contract version
 Pull requests 1 to 7 complete stage 1, the demo API the SDKs use. Pull
 requests 8 to 10 complete stage 2, the full API.
 
+## Progress
+
+Each step's pull request changes its own row: it sets **Status** to `Done`,
+and after the pull request is opened, a follow-up commit on the same branch
+fills in **Pull request**. A row reads `Done` on `main` only once its pull
+request is merged. A step whose status is `Needs operator decision` cannot
+start until the operator records the decision here.
+
+| Step | Status | Pull request |
+| --- | --- | --- |
+| 1. Load the fixtures and enforce the invariants | Not started | |
+| 2. Implement the data rules | Not started | |
+| 3. Build the conformance runner | Not started | |
+| 4. Serve the foundation | Not started | |
+| 5. Serve observations with pagination | Not started | |
+| 6. Serve the change stream | Not started | |
+| 7. Publish the demo API image | Needs operator decision | |
+| 8. Add `published_as_of`, the revision history, and the release calendar | Not started | |
+| 9. Add exports | Not started | |
+| 10. Publish the full API image | Not started | |
+
 ## Package layout
 
 A pull request may refine this layout if it explains why.
@@ -143,6 +164,11 @@ parameter.
   stage 1 file passes.
 
 ### 7. Publish the demo API image
+
+Before this step starts, the operator chooses the image name and the tag
+scheme that triggers a release. Release tags must not match `contract-v*`,
+which marks contract versions. The decision is recorded here and the step's
+status changes to `Not started`.
 
 - A `Dockerfile` that builds a static binary into a minimal image, with the
   fixtures embedded and the default port exposed. Labels record the contract
