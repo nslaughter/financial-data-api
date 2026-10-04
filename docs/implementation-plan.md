@@ -90,7 +90,12 @@ Out of scope: HTTP, parameters, errors, and tokens.
 - Validate every JSON response against `spec/openapi.yaml`, in addition to
   the expected values. The subset match ignores fields an expectation does
   not name. Schema validation is what catches a field that is omitted
-  instead of `null`.
+  instead of `null`. A response to a request that matches no operation (an
+  unknown path, or a method the path does not support) follows the
+  OpenAPI document's rules for every path: validate its body against
+  `#/components/schemas/Problem`, and a `405` also against
+  `#/components/responses/MethodNotAllowed`, whose `Allow` header is
+  required.
 - Flags:
   - `--base-url`;
   - `--stage` (runs every file the stage table requires of the API);
