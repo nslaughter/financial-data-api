@@ -1,0 +1,1385 @@
+openapi: 3.1.0
+info:
+  title: Financial data API
+  version: 0.2.0
+  summary: Requests and responses of the demo API (stage 1) and the full API (stage 2).
+  description: |
+    Machine-readable form of [the API specification](api.md), version 0.2.0,
+    versioned with [the data contract](data-contract.md).
+
+    `api.md` governs behavior, and this document must agree with it. If an
+    implementation finds a disagreement between `api.md`, `data-contract.md`,
+    and this file, it reports the disagreement instead of choosing one.
+
+    Each operation carries `x-stage`: 1 for the demo API, 2 for the full API.
+    A stage 1 server returns `404 not_found` for a stage 2 endpoint and
+    `400 unknown_parameter` for a stage 2 parameter.
+
+    Rules that apply to every path, and so are not repeated per operation:
+
+    - A path whose first segment is `v` followed by digits, other than `v1`,
+      returns `404 unsupported_api_version`. Any other unknown path, including
+      a trailing slash and every `/test` path when test control is disabled,
+      returns `404 not_found`.
+    - A known path called with a method it does not support returns
+      `405 method_not_allowed` with an `Allow` header
+      (`#/components/responses/MethodNotAllowed`).
+    - A query parameter the endpoint does not define returns
+      `400 unknown_parameter`; a repeated or empty parameter returns
+      `400 invalid_parameter`. An absent or empty request body is treated as
+      `{}`; a body that is not a JSON object returns `400 invalid_parameter`,
+      an undefined field `400 unknown_parameter`, and a missing required field
+      `400 missing_parameter`. A body sent with a `GET` is ignored.
+    - Faults are reported in this order: routing (404, 405), authentication
+      (401), request validation (400 except `position_ahead`), lookup (404),
+      entitlement (403), state (`400 position_ahead`, 409, 410).
+    - Every response field is always present; a field without a value is
+      `null`. Clients ignore response fields they do not recognize.
+    - The server's current time is a simulated clock. Revisions whose
+      `available_at` is after the clock are invisible on every customer path.
+servers:
+  - url: http://localhost:8080
+    description: The demo API container on its default port.
+tags:
+  - name: catalog
+    description: Server metadata and the dataset and series catalogs.
+  - name: observations
+    description: Selected revisions, the revision history, and the release calendar.
+  - name: change-stream
+    description: Each dataset's revisions in the order they became available.
+  - name: exports
+    description: Snapshots of a dataset with the matching change-stream position.
+  - name: test-control
+    description: The simulated clock and test actions. Served only with `TEST_CONTROL=enabled`.
+security:
+  - customerKey: []
+paths:
+  /v1/meta:
+    get:
+      operationId: getMeta
+      tags: [catalog]
+      x-stage: 1
+      summary: Describe the server
+      description: Requires no key and ignores the `Authorization` header, so a missing, unknown, or wrong-kind key still receives 200. Serves as the readiness check. `server_time` is the simulated clock.
+      security: []
+      responses:
+        '200':
+          description: The server's versions and clock.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Meta'
+              examples:
+                default:
+                  value:
+                    api_version: v1
+                    supported_api_versions: [v1]
+                    contract_version: 0.2.0
+                    server_time: '2026-10-01T00:00:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `invalid_parameter`.'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/datasets:
+    get:
+      operationId: listDatasets
+      tags: [catalog]
+      x-stage: 1
+      summary: List datasets
+      description: Every dataset, ordered by `dataset_id`. Not paged. Visible to every customer key, entitled or not.
+      responses:
+        '200':
+          description: The dataset catalog.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetList'
+              examples:
+                default:
+                  value:
+                    data:
+                      - dataset_id: core-indicators
+                        name: Core indicators (synthetic)
+                        description: Synthetic economic indicators created for this demonstration. Entitlements are granted per dataset.
+                        entitled: true
+                        head_position: 37
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `invalid_parameter`.'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/datasets/{dataset_id}:
+    get:
+      operationId: getDataset
+      tags: [catalog]
+      x-stage: 1
+      summary: Get a dataset
+      parameters:
+        - $ref: '#/components/parameters/DatasetIdPath'
+      responses:
+        '200':
+          description: One dataset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `invalid_parameter`.'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+          description: '`not_found`: no such dataset.'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/series:
+    get:
+      operationId: listSeries
+      tags: [catalog]
+      x-stage: 1
+      summary: List series
+      description: Every series, ordered by `series_id`. Not paged. Visible to every customer key, entitled or not.
+      responses:
+        '200':
+          description: The series catalog.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeriesList'
+              examples:
+                default:
+                  value:
+                    data:
+                      - series_id: activity-index
+                        dataset_id: core-indicators
+                        name: Activity index (synthetic)
+                        description: A fictional monthly index of economic activity created for this demonstration. It describes no real economy, source, or provider.
+                        frequency: monthly
+                        unit: index_points
+                        base_period: 2025 = 100
+                        seasonal_adjustment: seasonally_adjusted
+                        source: Fictional statistics office (synthetic)
+                        release_schedule: Third day of the following month at 12:30 UTC
+                        entitled: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `invalid_parameter`.'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/series/{series_id}:
+    get:
+      operationId: getSeries
+      tags: [catalog]
+      x-stage: 1
+      summary: Get a series
+      parameters:
+        - $ref: '#/components/parameters/SeriesIdPath'
+      responses:
+        '200':
+          description: One series.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Series'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `invalid_parameter`.'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+          description: '`not_found`: no such series.'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/observations:
+    get:
+      operationId: queryObservations
+      tags: [observations]
+      x-stage: 1
+      summary: Query the selected revision of each observation
+      description: |
+        Returns the selected revision of each observation whose period lies
+        within the range, following the data contract's selection rules for
+        `available_as_of` or, in stage 2, `published_as_of`. Without a cutoff,
+        the query selects among all visible revisions. Only revisions at or
+        below the snapshot position are considered. Results are ordered by
+        `period_start`, ascending. Requires entitlement to the series' dataset.
+
+        To continue, send `page_token` with every other parameter identical to
+        the first request, including `page_size`.
+      parameters:
+        - $ref: '#/components/parameters/SeriesId'
+        - $ref: '#/components/parameters/PeriodStart'
+        - $ref: '#/components/parameters/PeriodEnd'
+        - $ref: '#/components/parameters/AvailableAsOf'
+        - $ref: '#/components/parameters/PublishedAsOf'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+      responses:
+        '200':
+          description: One page of selected revisions. An empty `data` means the query matched nothing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservationPage'
+              examples:
+                august2026AtSeptember4:
+                  summary: series_id=activity-index&period_start=2026-08-01&period_end=2026-09-01&available_as_of=2026-09-04T00:00:00Z at the default clock
+                  value:
+                    data:
+                      - sequence: 36
+                        series_id: activity-index
+                        observation_id: obs_aug26
+                        revision_id: rev_aug26_1
+                        revision_number: 1
+                        change_type: initial_release
+                        period_start: '2026-08-01'
+                        period_end: '2026-09-01'
+                        value: '102.4'
+                        missing_reason: null
+                        unit: index_points
+                        published_at: '2026-09-03T12:30:00Z'
+                        received_at: '2026-09-03T12:30:04Z'
+                        available_at: '2026-09-03T12:31:10Z'
+                    position: 37
+                    snapshot_expires_at: '2026-10-01T01:00:00Z'
+                    next_page_token: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `missing_parameter`, `invalid_parameter`, `conflicting_cutoffs` (stage 2), `cutoff_in_future`, `invalid_page_token`, `page_token_mismatch`.'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/NotEntitled'
+        '404':
+          $ref: '#/components/responses/NotFound'
+          description: '`not_found`: no such series.'
+        '410':
+          $ref: '#/components/responses/Gone'
+          description: '`page_token_expired`: the clock is at or after `snapshot_expires_at`, 3,600 seconds after the first page. Restart the query.'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/revisions:
+    get:
+      operationId: listRevisions
+      tags: [observations]
+      x-stage: 2
+      summary: List every revision of the matching observations
+      description: |
+        Returns every visible revision of the matching observations, including
+        superseded, erroneous, and withdrawn ones, at or below the snapshot
+        position. Results are ordered by `period_start`, then
+        `revision_number`, both ascending. Requires entitlement to the series'
+        dataset. Paged like `GET /v1/observations`.
+      parameters:
+        - $ref: '#/components/parameters/SeriesId'
+        - $ref: '#/components/parameters/PeriodStart'
+        - $ref: '#/components/parameters/PeriodEnd'
+        - $ref: '#/components/parameters/AvailableAsOf'
+          description: Include only revisions with `available_at` at or before this instant. At most the clock.
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+      responses:
+        '200':
+          description: One page of revisions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevisionPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `missing_parameter`, `invalid_parameter`, `cutoff_in_future`, `invalid_page_token`, `page_token_mismatch`.'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/NotEntitled'
+        '404':
+          $ref: '#/components/responses/NotFound'
+          description: '`not_found`: no such series.'
+        '410':
+          $ref: '#/components/responses/Gone'
+          description: '`page_token_expired`: the clock is at or after `snapshot_expires_at`, 3,600 seconds after the first page. Restart the query.'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/release-calendar:
+    get:
+      operationId: listReleaseCalendar
+      tags: [observations]
+      x-stage: 2
+      summary: List scheduled releases of a series
+      description: |
+        Returns the scheduled releases of a series whose period lies within the
+        range, whatever the clock shows, ordered by `period_start` ascending.
+        Requires entitlement to the series' dataset. Not paged.
+      parameters:
+        - $ref: '#/components/parameters/SeriesId'
+        - $ref: '#/components/parameters/PeriodStart'
+        - $ref: '#/components/parameters/PeriodEnd'
+      responses:
+        '200':
+          description: The matching calendar entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseCalendarList'
+              examples:
+                july2026:
+                  value:
+                    data:
+                      - series_id: activity-index
+                        period_start: '2026-07-01'
+                        period_end: '2026-08-01'
+                        scheduled_at: '2026-08-03T12:30:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `missing_parameter`, `invalid_parameter`.'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/NotEntitled'
+        '404':
+          $ref: '#/components/responses/NotFound'
+          description: '`not_found`: no such series.'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/datasets/{dataset_id}/changes:
+    get:
+      operationId: readChanges
+      tags: [change-stream]
+      x-stage: 1
+      summary: Read the dataset's change stream after a position
+      description: |
+        Returns the visible revisions with `sequence` greater than `after`, in
+        `sequence` order. `next_position` is the `sequence` of the last event
+        returned, or `after` when none is returned. The client has caught up
+        when `next_position` equals `head_position`. Requires entitlement to
+        the dataset.
+      parameters:
+        - $ref: '#/components/parameters/DatasetIdPath'
+        - $ref: '#/components/parameters/After'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Events after the position.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangePage'
+              examples:
+                afterPosition36:
+                  value:
+                    data:
+                      - sequence: 37
+                        series_id: activity-index
+                        observation_id: obs_aug26
+                        revision_id: rev_aug26_2
+                        revision_number: 2
+                        change_type: source_revision
+                        period_start: '2026-08-01'
+                        period_end: '2026-09-01'
+                        value: '102.1'
+                        missing_reason: null
+                        unit: index_points
+                        published_at: '2026-09-10T12:30:00Z'
+                        received_at: '2026-09-10T12:30:04Z'
+                        available_at: '2026-09-10T12:30:40Z'
+                    next_position: 37
+                    head_position: 37
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `missing_parameter`, `invalid_parameter`, and, after lookup and entitlement, `position_ahead` when `after` is greater than the head position.'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/NotEntitled'
+        '404':
+          $ref: '#/components/responses/NotFound'
+          description: '`not_found`: no such dataset.'
+        '410':
+          $ref: '#/components/responses/Gone'
+          description: '`position_expired`: the clock is at or after 1,095 days past the `available_at` of the first visible event after `after`. Load a fresh export or query, then continue from its position.'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/datasets/{dataset_id}/exports:
+    post:
+      operationId: createExport
+      tags: [exports]
+      x-stage: 2
+      summary: Create an export of the dataset at its head position
+      description: |
+        The snapshot is every visible revision with `sequence` at or below the
+        dataset's head position when the export is created. Revisions that
+        become visible later are never in this export. Requires entitlement to
+        the dataset.
+      parameters:
+        - $ref: '#/components/parameters/DatasetIdPath'
+      requestBody:
+        required: false
+        description: Empty or `{}`. Any field returns `400 unknown_parameter`.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportCreateRequest'
+      responses:
+        '201':
+          description: The export was created. The body is its manifest.
+          headers:
+            Location:
+              required: true
+              description: The path of the new export, `/v1/exports/{export_id}`.
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportManifest'
+              examples:
+                atPosition36:
+                  $ref: '#/components/examples/ExportManifestAtPosition36'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `invalid_parameter`.'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/NotEntitled'
+        '404':
+          $ref: '#/components/responses/NotFound'
+          description: '`not_found`: no such dataset.'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/exports/{export_id}:
+    get:
+      operationId: getExport
+      tags: [exports]
+      x-stage: 2
+      summary: Get an export's manifest
+      description: Requires entitlement to the export's dataset, checked at the time of the request.
+      parameters:
+        - $ref: '#/components/parameters/ExportIdPath'
+      responses:
+        '200':
+          description: The manifest.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportManifest'
+              examples:
+                atPosition36:
+                  $ref: '#/components/examples/ExportManifestAtPosition36'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `invalid_parameter`.'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/NotEntitled'
+        '404':
+          $ref: '#/components/responses/NotFound'
+          description: '`not_found`: no such export, including one deleted by a reset.'
+        '410':
+          $ref: '#/components/responses/Gone'
+          description: '`export_expired`: the clock is at or after `expires_at`. Create a new export.'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/exports/{export_id}/files/{file_name}:
+    get:
+      operationId: downloadExportFile
+      tags: [exports]
+      x-stage: 2
+      summary: Download an export file
+      description: |
+        Every download returns identical bytes, whose length and SHA-256 digest
+        match the manifest. The file has one revision record per line, ordered
+        by `sequence`, in the canonical form defined in `api.md`: the 14 fields
+        in contract order, no whitespace outside strings, only `"`, `\`, and
+        control characters escaped, and a single `\n` after every record. The
+        same checks apply as for the manifest, at the time of the download.
+      parameters:
+        - $ref: '#/components/parameters/ExportIdPath'
+        - $ref: '#/components/parameters/FileNamePath'
+      responses:
+        '200':
+          description: The file's bytes.
+          headers:
+            Content-Length:
+              required: true
+              schema:
+                type: integer
+                minimum: 0
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+                description: Newline-delimited revision records in canonical form.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `invalid_parameter`.'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/NotEntitled'
+        '404':
+          $ref: '#/components/responses/NotFound'
+          description: '`not_found`: no such export or file.'
+        '410':
+          $ref: '#/components/responses/Gone'
+          description: '`export_expired`: the clock is at or after the export''s `expires_at`.'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /test/clock:
+    get:
+      operationId: getClock
+      tags: [test-control]
+      x-stage: 1
+      summary: Read the simulated clock
+      security:
+        - testControlKey: []
+      responses:
+        '200':
+          description: The clock.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Clock'
+              examples:
+                default:
+                  value:
+                    now: '2026-10-01T00:00:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `invalid_parameter`.'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+          description: '`not_found`: test control is disabled.'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      operationId: setClock
+      tags: [test-control]
+      x-stage: 1
+      summary: Move the simulated clock forward
+      description: |
+        Revisions whose `available_at` the clock passes become visible at once,
+        in `sequence` order, and expiry is evaluated against the new time. The
+        current time is accepted and changes nothing.
+      security:
+        - testControlKey: []
+      requestBody:
+        required: true
+        description: An absent body is treated as `{}` and returns `400 missing_parameter` for `now`.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClockRequest'
+      responses:
+        '200':
+          description: The new clock.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Clock'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `missing_parameter`, `invalid_parameter`.'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+          description: '`not_found`: test control is disabled.'
+        '409':
+          $ref: '#/components/responses/Conflict'
+          description: '`clock_backwards`: `now` is before the current clock.'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /test/reset:
+    post:
+      operationId: reset
+      tags: [test-control]
+      x-stage: 1
+      summary: Return the server to its startup state
+      description: |
+        Sets the clock to `clock`, or to `CLOCK_START` when absent; any valid
+        timestamp is accepted, including one earlier than the current clock.
+        Restores every credential from the fixture, deletes every export, and
+        replaces the page-token signing key. Positions held by clients are not
+        invalidated.
+      security:
+        - testControlKey: []
+      requestBody:
+        required: false
+        description: 'Empty, `{}`, or `{"clock": "<timestamp>"}`.'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetRequest'
+      responses:
+        '200':
+          description: The clock after the reset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Clock'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `invalid_parameter`.'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+          description: '`not_found`: test control is disabled.'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /test/credentials/{credential_id}:
+    put:
+      operationId: updateCredential
+      tags: [test-control]
+      x-stage: 1
+      summary: Change a customer credential until the next reset
+      description: |
+        Both fields are optional; an absent field is unchanged. `active: false`
+        makes the key fail with `401 unauthenticated`. Removing a dataset makes
+        requests for it fail with `403 not_entitled`. Both take effect on the
+        next request, including resumed pages and export downloads.
+
+        The server checks, in this order: the body's form (400); that the
+        credential exists (404); that it is a customer credential
+        (`400 invalid_parameter` naming `credential_id`) and that every dataset
+        exists (`400 invalid_parameter` naming `datasets`).
+      security:
+        - testControlKey: []
+      parameters:
+        - $ref: '#/components/parameters/CredentialIdPath'
+      requestBody:
+        required: false
+        description: An absent or empty body is treated as `{}` and changes nothing.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CredentialUpdate'
+      responses:
+        '200':
+          description: The credential's new state, without its key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialState'
+              examples:
+                revoked:
+                  value:
+                    credential_id: cred_research
+                    kind: customer
+                    active: false
+                    datasets: [core-indicators]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+          description: '`unknown_parameter`, `invalid_parameter` (including the test-control credential or an unknown dataset).'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+          description: '`not_found`: no such credential, or test control is disabled.'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  securitySchemes:
+    customerKey:
+      type: http
+      scheme: bearer
+      description: A customer `api_key` from `fixtures/credentials.json`. Accepted only under `/v1`.
+    testControlKey:
+      type: http
+      scheme: bearer
+      description: The test-control `api_key` from `fixtures/credentials.json`. Accepted only under `/test`.
+  parameters:
+    DatasetIdPath:
+      name: dataset_id
+      in: path
+      required: true
+      schema:
+        type: string
+    SeriesIdPath:
+      name: series_id
+      in: path
+      required: true
+      schema:
+        type: string
+    ExportIdPath:
+      name: export_id
+      in: path
+      required: true
+      description: An opaque export identifier.
+      schema:
+        type: string
+    FileNamePath:
+      name: file_name
+      in: path
+      required: true
+      description: In v1 an export has exactly one file, `revisions.jsonl`.
+      schema:
+        type: string
+    CredentialIdPath:
+      name: credential_id
+      in: path
+      required: true
+      schema:
+        type: string
+    SeriesId:
+      name: series_id
+      in: query
+      required: true
+      description: The series. An unknown series returns `404 not_found`.
+      schema:
+        type: string
+        minLength: 1
+    PeriodStart:
+      name: period_start
+      in: query
+      required: false
+      description: Include items with `period_start` at or after this date. If both bounds are given, `period_start` must be before `period_end`.
+      schema:
+        $ref: '#/components/schemas/Date'
+    PeriodEnd:
+      name: period_end
+      in: query
+      required: false
+      description: Include items with `period_end` at or before this date.
+      schema:
+        $ref: '#/components/schemas/Date'
+    AvailableAsOf:
+      name: available_as_of
+      in: query
+      required: false
+      description: Select among revisions with `available_at` at or before this instant. At most the clock.
+      schema:
+        $ref: '#/components/schemas/Timestamp'
+    PublishedAsOf:
+      name: published_as_of
+      in: query
+      required: false
+      x-stage: 2
+      description: Stage 2. Select among revisions with `published_at` at or before this instant. At most the clock. Cannot be combined with `available_as_of`.
+      schema:
+        $ref: '#/components/schemas/Timestamp'
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: Results per page. Must be identical on every page of a query.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 100
+    PageToken:
+      name: page_token
+      in: query
+      required: false
+      description: Continues a query. Opaque; send it with every other parameter identical to the first request.
+      schema:
+        type: string
+        minLength: 1
+    After:
+      name: after
+      in: query
+      required: true
+      description: The client's saved position. 0 reads from the start.
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 9007199254740991
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: The most events to return.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 100
+  responses:
+    BadRequest:
+      description: The request is invalid.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            unknownParameter:
+              value:
+                status: 400
+                code: unknown_parameter
+                title: Unknown parameter
+                detail: available_asof is not a parameter of GET /v1/observations.
+                parameter: available_asof
+    Unauthenticated:
+      description: '`unauthenticated`: the `Authorization` header is missing or malformed, or the key is unknown, inactive, or of the wrong kind for the endpoint.'
+      headers:
+        WWW-Authenticate:
+          required: true
+          schema:
+            type: string
+            const: Bearer
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotEntitled:
+      description: '`not_entitled`: the key is valid but not entitled to the dataset the request reads.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: '`not_found` or `unsupported_api_version`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    MethodNotAllowed:
+      description: '`method_not_allowed`: the path exists but not with this method. Returned for any path; not listed per operation.'
+      headers:
+        Allow:
+          required: true
+          description: The path's methods in the order GET, PUT, POST, separated by a comma and a space, such as `GET, PUT`.
+          schema:
+            type: string
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: '`clock_backwards`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Gone:
+      description: '`page_token_expired`, `position_expired`, or `export_expired`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    InternalError:
+      description: '`internal`: an unexpected server failure.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  examples:
+    ExportManifestAtPosition36:
+      summary: An export created with the clock at 2026-09-10T12:30:20Z
+      value:
+        export_id: exp_5f0c9a7e2b14d6c3
+        dataset_id: core-indicators
+        position: 36
+        created_at: '2026-09-10T12:30:20Z'
+        expires_at: '2026-09-11T12:30:20Z'
+        api_version: v1
+        contract_version: 0.2.0
+        coverage:
+          series_ids: [activity-index]
+          observation_count: 32
+          revision_count: 36
+          period_start: '2024-01-01'
+          period_end: '2026-09-01'
+        files:
+          - name: revisions.jsonl
+            url: /v1/exports/exp_5f0c9a7e2b14d6c3/files/revisions.jsonl
+            media_type: application/x-ndjson
+            record_count: 36
+            size_bytes: 13695
+            sha256: e75e2d61e8ded1e54e210e7d854c394c9e880dcacafd2c6423ddfe5b81652469
+  schemas:
+    Date:
+      type: string
+      format: date
+      pattern: '^\d{4}-\d{2}-\d{2}$'
+      description: A valid calendar date, `YYYY-MM-DD`, without a time zone.
+    Timestamp:
+      type: string
+      format: date-time
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
+      description: Exactly `YYYY-MM-DDTHH:MM:SSZ`, UTC, whole seconds from `00` to `59`, a valid instant.
+    Position:
+      type: integer
+      minimum: 0
+      maximum: 9007199254740991
+      description: A change-stream position. Clients save positions the server returns and never compute them.
+    RevisionRecord:
+      type: object
+      description: |
+        One version of an observation, with the same 14 fields wherever it
+        appears. Field meanings are in the data contract's revision records
+        table; export files serialize the fields in the order listed here.
+      required:
+        - sequence
+        - series_id
+        - observation_id
+        - revision_id
+        - revision_number
+        - change_type
+        - period_start
+        - period_end
+        - value
+        - missing_reason
+        - unit
+        - published_at
+        - received_at
+        - available_at
+      properties:
+        sequence:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        series_id:
+          type: string
+        observation_id:
+          type: string
+        revision_id:
+          type: string
+        revision_number:
+          type: integer
+          minimum: 1
+        change_type:
+          type: string
+          enum: [initial_release, source_revision, provider_correction, withdrawal]
+        period_start:
+          $ref: '#/components/schemas/Date'
+        period_end:
+          $ref: '#/components/schemas/Date'
+        value:
+          type: [string, 'null']
+          pattern: '^-?[0-9]+(\.[0-9]+)?$'
+          description: A decimal string copied exactly from the fixture, or null. Never a JSON number.
+        missing_reason:
+          type: [string, 'null']
+          description: Why a released observation has no value. Clients must accept reasons they do not recognize.
+        unit:
+          type: string
+        published_at:
+          $ref: '#/components/schemas/Timestamp'
+        received_at:
+          $ref: '#/components/schemas/Timestamp'
+        available_at:
+          $ref: '#/components/schemas/Timestamp'
+      allOf:
+        - if:
+            properties:
+              change_type:
+                const: withdrawal
+          then:
+            properties:
+              value:
+                type: 'null'
+              missing_reason:
+                type: 'null'
+        - if:
+            properties:
+              change_type:
+                const: provider_correction
+          then:
+            properties:
+              value:
+                type: string
+              missing_reason:
+                type: 'null'
+        - if:
+            properties:
+              change_type:
+                enum: [initial_release, source_revision]
+          then:
+            oneOf:
+              - required: [value, missing_reason]
+                properties:
+                  value:
+                    type: string
+                  missing_reason:
+                    type: 'null'
+              - required: [value, missing_reason]
+                properties:
+                  value:
+                    type: 'null'
+                  missing_reason:
+                    type: string
+    Meta:
+      type: object
+      required: [api_version, supported_api_versions, contract_version, server_time]
+      properties:
+        api_version:
+          type: string
+          const: v1
+        supported_api_versions:
+          type: array
+          items:
+            type: string
+        contract_version:
+          type: string
+          pattern: '^\d+\.\d+\.\d+$'
+        server_time:
+          $ref: '#/components/schemas/Timestamp'
+    Dataset:
+      type: object
+      required: [dataset_id, name, description, entitled, head_position]
+      properties:
+        dataset_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        entitled:
+          type: boolean
+          description: Whether the requesting key may read the dataset's data.
+        head_position:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 9007199254740991
+          description: The dataset's head position, or null when the key is not entitled.
+    DatasetList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Dataset'
+    Series:
+      type: object
+      required:
+        - series_id
+        - dataset_id
+        - name
+        - description
+        - frequency
+        - unit
+        - base_period
+        - seasonal_adjustment
+        - source
+        - release_schedule
+        - entitled
+      properties:
+        series_id:
+          type: string
+        dataset_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        frequency:
+          type: string
+          description: '`monthly` for every series in contract version 0.2.'
+        unit:
+          type: string
+        base_period:
+          type: string
+        seasonal_adjustment:
+          type: string
+          enum: [seasonally_adjusted, not_seasonally_adjusted]
+        source:
+          type: string
+        release_schedule:
+          type: string
+        entitled:
+          type: boolean
+    SeriesList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Series'
+    ObservationPage:
+      type: object
+      required: [data, position, snapshot_expires_at, next_page_token]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RevisionRecord'
+        position:
+          $ref: '#/components/schemas/Position'
+          description: The snapshot position the query is evaluated at, the same on every page.
+        snapshot_expires_at:
+          $ref: '#/components/schemas/Timestamp'
+          description: When the snapshot expires, 3,600 seconds of simulated time after the first page.
+        next_page_token:
+          type: [string, 'null']
+          description: An opaque token when more results remain; null when this page holds the last result.
+    RevisionPage:
+      type: object
+      required: [data, position, snapshot_expires_at, next_page_token]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RevisionRecord'
+        position:
+          $ref: '#/components/schemas/Position'
+        snapshot_expires_at:
+          $ref: '#/components/schemas/Timestamp'
+        next_page_token:
+          type: [string, 'null']
+    ReleaseCalendarEntry:
+      type: object
+      required: [series_id, period_start, period_end, scheduled_at]
+      properties:
+        series_id:
+          type: string
+        period_start:
+          $ref: '#/components/schemas/Date'
+        period_end:
+          $ref: '#/components/schemas/Date'
+        scheduled_at:
+          $ref: '#/components/schemas/Timestamp'
+    ReleaseCalendarList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReleaseCalendarEntry'
+    ChangePage:
+      type: object
+      required: [data, next_position, head_position]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RevisionRecord'
+        next_position:
+          $ref: '#/components/schemas/Position'
+          description: The `sequence` of the last event returned, or `after` when none is returned.
+        head_position:
+          $ref: '#/components/schemas/Position'
+          description: The dataset's head position.
+    ExportCreateRequest:
+      type: object
+      additionalProperties: false
+      maxProperties: 0
+      description: Empty. Any field returns `400 unknown_parameter`.
+    ExportManifest:
+      type: object
+      required:
+        - export_id
+        - dataset_id
+        - position
+        - created_at
+        - expires_at
+        - api_version
+        - contract_version
+        - coverage
+        - files
+      properties:
+        export_id:
+          type: string
+          description: Identifies the snapshot. Opaque and never reused, even after a reset.
+        dataset_id:
+          type: string
+        position:
+          $ref: '#/components/schemas/Position'
+          description: The dataset's head position when the export was created. The snapshot is every visible revision at or below it.
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+        expires_at:
+          $ref: '#/components/schemas/Timestamp'
+          description: '`created_at` plus 86,400 seconds.'
+        api_version:
+          type: string
+          const: v1
+        contract_version:
+          type: string
+          pattern: '^\d+\.\d+\.\d+$'
+        coverage:
+          $ref: '#/components/schemas/ExportCoverage'
+        files:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            $ref: '#/components/schemas/ExportFile'
+    ExportCoverage:
+      type: object
+      required: [series_ids, observation_count, revision_count, period_start, period_end]
+      properties:
+        series_ids:
+          type: array
+          description: The series with at least one revision in the file, ascending.
+          items:
+            type: string
+        observation_count:
+          type: integer
+          minimum: 0
+        revision_count:
+          type: integer
+          minimum: 0
+        period_start:
+          description: The earliest `period_start` in the file, or null for an empty snapshot.
+          oneOf:
+            - $ref: '#/components/schemas/Date'
+            - type: 'null'
+        period_end:
+          description: The latest `period_end` in the file, or null for an empty snapshot.
+          oneOf:
+            - $ref: '#/components/schemas/Date'
+            - type: 'null'
+    ExportFile:
+      type: object
+      required: [name, url, media_type, record_count, size_bytes, sha256]
+      properties:
+        name:
+          type: string
+          const: revisions.jsonl
+        url:
+          type: string
+          format: uri-reference
+          description: A path on this server.
+        media_type:
+          type: string
+          const: application/x-ndjson
+        record_count:
+          type: integer
+          minimum: 0
+        size_bytes:
+          type: integer
+          minimum: 0
+        sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+    Clock:
+      type: object
+      required: [now]
+      properties:
+        now:
+          $ref: '#/components/schemas/Timestamp'
+    ClockRequest:
+      type: object
+      additionalProperties: false
+      required: [now]
+      properties:
+        now:
+          $ref: '#/components/schemas/Timestamp'
+    ResetRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        clock:
+          $ref: '#/components/schemas/Timestamp'
+    CredentialUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        active:
+          type: boolean
+        datasets:
+          type: array
+          items:
+            type: string
+    CredentialState:
+      type: object
+      required: [credential_id, kind, active, datasets]
+      properties:
+        credential_id:
+          type: string
+        kind:
+          type: string
+          enum: [customer, test_control]
+        active:
+          type: boolean
+        datasets:
+          type: array
+          items:
+            type: string
+    Problem:
+      type: object
+      description: |
+        RFC 9457 problem details. `code` is stable and is what clients act on;
+        `title` is fixed for each code; `detail` explains this occurrence and
+        may change between versions. `parameter` names the query parameter or
+        body field at fault: the parameter or field for `unknown_parameter`,
+        `missing_parameter`, `invalid_parameter`, and `cutoff_in_future`
+        (`period_end` for an empty or reversed period range, null for a body
+        that is not a JSON object); `page_token` for the three page-token
+        codes; `after` for `position_ahead` and `position_expired`; `now` for
+        `clock_backwards`; null for every other code.
+      required: [status, code, title, detail, parameter]
+      properties:
+        status:
+          type: integer
+        code:
+          type: string
+          enum:
+            - unknown_parameter
+            - missing_parameter
+            - invalid_parameter
+            - conflicting_cutoffs
+            - cutoff_in_future
+            - invalid_page_token
+            - page_token_mismatch
+            - position_ahead
+            - unauthenticated
+            - not_entitled
+            - not_found
+            - unsupported_api_version
+            - method_not_allowed
+            - clock_backwards
+            - page_token_expired
+            - position_expired
+            - export_expired
+            - internal
+        title:
+          type: string
+        detail:
+          type: string
+        parameter:
+          type: [string, 'null']
+      oneOf:
+        - required: [status, code, title]
+          properties: {status: {const: 400}, code: {const: unknown_parameter}, title: {const: Unknown parameter}}
+        - required: [status, code, title]
+          properties: {status: {const: 400}, code: {const: missing_parameter}, title: {const: Missing parameter}}
+        - required: [status, code, title]
+          properties: {status: {const: 400}, code: {const: invalid_parameter}, title: {const: Invalid parameter}}
+        - required: [status, code, title]
+          properties: {status: {const: 400}, code: {const: conflicting_cutoffs}, title: {const: Conflicting cutoffs}}
+        - required: [status, code, title]
+          properties: {status: {const: 400}, code: {const: cutoff_in_future}, title: {const: Cutoff in the future}}
+        - required: [status, code, title]
+          properties: {status: {const: 400}, code: {const: invalid_page_token}, title: {const: Invalid page token}}
+        - required: [status, code, title]
+          properties: {status: {const: 400}, code: {const: page_token_mismatch}, title: {const: Page token mismatch}}
+        - required: [status, code, title]
+          properties: {status: {const: 400}, code: {const: position_ahead}, title: {const: Position ahead of the stream}}
+        - required: [status, code, title]
+          properties: {status: {const: 401}, code: {const: unauthenticated}, title: {const: Unauthenticated}}
+        - required: [status, code, title]
+          properties: {status: {const: 403}, code: {const: not_entitled}, title: {const: Not entitled}}
+        - required: [status, code, title]
+          properties: {status: {const: 404}, code: {const: not_found}, title: {const: Not found}}
+        - required: [status, code, title]
+          properties: {status: {const: 404}, code: {const: unsupported_api_version}, title: {const: Unsupported API version}}
+        - required: [status, code, title]
+          properties: {status: {const: 405}, code: {const: method_not_allowed}, title: {const: Method not allowed}}
+        - required: [status, code, title]
+          properties: {status: {const: 409}, code: {const: clock_backwards}, title: {const: Clock cannot move backwards}}
+        - required: [status, code, title]
+          properties: {status: {const: 410}, code: {const: page_token_expired}, title: {const: Page token expired}}
+        - required: [status, code, title]
+          properties: {status: {const: 410}, code: {const: position_expired}, title: {const: Position expired}}
+        - required: [status, code, title]
+          properties: {status: {const: 410}, code: {const: export_expired}, title: {const: Export expired}}
+        - required: [status, code, title]
+          properties: {status: {const: 500}, code: {const: internal}, title: {const: Internal error}}
