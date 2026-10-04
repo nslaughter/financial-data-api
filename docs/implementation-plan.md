@@ -226,7 +226,8 @@ Stage 1 is complete here. The SDKs can pin the image.
   - the canonical file bytes, stored or regenerated identically;
   - expiry;
   - entitlement checks on every download;
-  - identifiers never reused after a reset.
+  - identifiers with at least 64 bits from `crypto/rand`, never reused after
+    a reset.
 - The runner adds `export-handoff` and `exports`. Done when every file passes
   with `--stage 2`.
 

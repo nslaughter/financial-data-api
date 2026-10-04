@@ -577,9 +577,13 @@ its body and a `Location` header holding the manifest's path,
 }
 ```
 
-- `export_id` identifies the snapshot. It is opaque, and the server MUST NOT
-  reuse one, even after a reset. Creating another export, even at the same
-  position, creates a new identity.
+- `export_id` identifies the snapshot. It is opaque, it MUST carry at least
+  64 bits from a cryptographically secure random source, and the server MUST
+  NOT reuse one, even after a reset. Creating another export, even at the
+  same position, creates a new identity. Lookup comes before entitlement in
+  the error order, so a key without entitlement can tell an existing export
+  (`403 not_entitled`) from an unknown one (`404 not_found`); random
+  identifiers keep it from finding exports by guessing.
 - `position` is the dataset's head position when the export is created. The
   snapshot is every visible revision with `sequence` at or below it. Revisions
   that become visible later are never in this export, whenever its file is

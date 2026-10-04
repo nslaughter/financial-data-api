@@ -724,7 +724,7 @@ components:
       name: export_id
       in: path
       required: true
-      description: An opaque export identifier.
+      description: An opaque export identifier, carrying at least 64 bits from a cryptographically secure random source.
       schema:
         type: string
     FileNamePath:
@@ -1193,7 +1193,7 @@ components:
       properties:
         export_id:
           type: string
-          description: Identifies the snapshot. Opaque and never reused, even after a reset.
+          description: Identifies the snapshot. Opaque, carrying at least 64 bits from a cryptographically secure random source, and never reused, even after a reset.
         dataset_id:
           type: string
         position:
