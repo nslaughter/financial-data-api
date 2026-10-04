@@ -204,8 +204,9 @@ When a request has several faults, the server reports the first in this order:
   with `401 unauthenticated`.
 - A `401` response includes `WWW-Authenticate: Bearer`.
 - A customer key may read metadata without entitlements: the catalog
-  (`/v1/datasets` and `/v1/series`) and the release calendar
-  (`/v1/release-calendar`). Every other `/v1` endpoint reads one dataset's
+  (`GET /v1/datasets`, `GET /v1/datasets/{dataset_id}`, `GET /v1/series`,
+  and `GET /v1/series/{series_id}`) and the release calendar
+  (`GET /v1/release-calendar`). Every other `/v1` endpoint reads one dataset's
   revisions and requires the key to be entitled to it; otherwise it returns
   `403 not_entitled`.
 - The server checks the key and its entitlements on every request, using
