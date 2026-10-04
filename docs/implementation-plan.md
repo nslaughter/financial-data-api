@@ -122,9 +122,10 @@ Out of scope: running against the real server; nothing serves the API yet.
 
 ### 4. Serve the foundation: routing, errors, the clock, authentication, test control, and the catalog
 
-- Read `PORT`, `CLOCK_START`, `TEST_CONTROL`, and `FIXTURES_DIR`. Refuse to
-  start on invalid values, including a `CLOCK_START` later than
-  `9999-12-30T23:59:59Z`, or failed invariants.
+- Read `PORT`, `CLOCK_START`, `TEST_CONTROL`, and `FIXTURES_DIR`, treating a
+  variable set to an empty value as unset. Refuse to start on invalid values,
+  including a `CLOCK_START` later than `9999-12-30T23:59:59Z`, or failed
+  invariants.
 - Implement routing, using the error order in
   [Errors](../spec/api.md#errors):
   - `404 unsupported_api_version`;
@@ -151,7 +152,8 @@ Out of scope: running against the real server; nothing serves the API yet.
   - `httptest` tests for routing, error bodies and order, parsing,
     authentication, and test control;
   - the server refuses to start with a `CLOCK_START` later than
-    `9999-12-30T23:59:59Z`.
+    `9999-12-30T23:59:59Z`;
+  - each of the four variables set to an empty value takes its default.
 
 Out of scope: observations, pagination, and the change stream.
 

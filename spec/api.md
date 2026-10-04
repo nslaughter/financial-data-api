@@ -44,8 +44,10 @@ contract version built in. It reads these environment variables:
 | --- | --- | --- |
 | `PORT` | `8080` | TCP port for HTTP. |
 | `CLOCK_START` | `2026-10-01T00:00:00Z` | The simulated clock at startup and after a reset without a clock. Must be a timestamp in the format below, no later than `9999-12-30T23:59:59Z` (see [Simulated clock](#simulated-clock)); otherwise the server refuses to start. |
-| `TEST_CONTROL` | `disabled` | `enabled` serves the `/test` endpoints, and `disabled` does not. Any other value is refused at startup. |
+| `TEST_CONTROL` | `disabled` | `enabled` serves the `/test` endpoints, and `disabled` does not. Any other nonempty value is refused at startup. |
 | `FIXTURES_DIR` | the fixtures built into the image | Directory containing the files from `fixtures/`. |
+
+A variable set to an empty value is treated as unset, so its default applies.
 
 At startup the server loads every fixture file and checks the
 [invariants](data-contract.md#invariants). If any check fails, it MUST exit
