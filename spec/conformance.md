@@ -116,7 +116,10 @@ A scenario passes when every step passes; the first failing step ends it.
 
 SDK runners may also check a scenario's optional `expected_local_copy`: after
 loading the scenario's export file and applying the changes it reads, the
-SDK's local copy must select those revisions. The API runner ignores it.
+SDK's local copy must select those revisions. Each entry names an
+`observation_id`, and the revision the local copy selects for that
+observation must match the entry. Observations the list does not name are
+not compared. The API runner ignores it.
 
 ### Steps
 
