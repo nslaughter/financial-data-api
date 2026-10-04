@@ -204,9 +204,10 @@ When a request has several faults, the server reports the first in this order:
   refused under `/test`, and the test-control key is refused under `/v1`, both
   with `401 unauthenticated`.
 - A `401` response includes `WWW-Authenticate: Bearer`.
-- A customer key may read the catalog (`/v1/datasets` and `/v1/series`)
-  without entitlements. Every other `/v1` endpoint reads one dataset and
-  requires the key to be entitled to it; otherwise it returns
+- A customer key may read metadata without entitlements: the catalog
+  (`/v1/datasets` and `/v1/series`) and the release calendar
+  (`/v1/release-calendar`). Every other `/v1` endpoint reads one dataset's
+  revisions and requires the key to be entitled to it; otherwise it returns
   `403 not_entitled`.
 - The server checks the key and its entitlements on every request, using
   their state at that moment. Page tokens, positions, and export identifiers
@@ -442,7 +443,8 @@ ascending. The response has the same members as `GET /v1/observations`:
 
 Stage 2. Returns the scheduled releases of a series from the
 [release calendar](data-contract.md#release-calendar), whatever the clock
-shows. Requires entitlement to the series' dataset. Not paged.
+shows. Any valid customer key may read it; it requires no entitlement. Not
+paged.
 
 | Parameter | Required | Type | Meaning |
 | --- | --- | --- | --- |

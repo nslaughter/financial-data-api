@@ -96,15 +96,26 @@
       "reason": "The calendar returns every matching entry in one response."
     },
     {
-      "name": "the calendar requires entitlement",
+      "name": "the calendar needs no entitlement",
       "steps": [
         {
-          "request": {"path": "/v1/release-calendar", "query": {"series_id": "activity-index"}, "credential": "cred_unentitled"},
-          "expect": {"status": 403, "code": "not_entitled"}
+          "request": {
+            "path": "/v1/release-calendar",
+            "query": {"series_id": "activity-index", "period_start": "2026-07-01", "period_end": "2026-08-01"},
+            "credential": "cred_unentitled"
+          },
+          "expect": {
+            "status": 200,
+            "body": {"data": [{"series_id": "activity-index", "period_start": "2026-07-01", "scheduled_at": "2026-08-03T12:30:00Z"}]}
+          }
+        },
+        {
+          "request": {"path": "/v1/release-calendar", "query": {"series_id": "activity-index"}, "credential": null},
+          "expect": {"status": 401, "code": "unauthenticated"}
         },
         {"request": {"path": "/v1/release-calendar", "query": {"series_id": "no-such-series"}}, "expect": {"status": 404, "code": "not_found"}}
       ],
-      "reason": "The calendar belongs to the series' dataset."
+      "reason": "A release schedule is metadata, like the catalog, so any valid customer key may read it without an entitlement. A key is still required, and an unknown series is still not found."
     }
   ]
 }

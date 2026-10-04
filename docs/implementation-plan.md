@@ -11,9 +11,9 @@ and [`spec/conformance.md`](../spec/conformance.md), at contract version
 Pull requests 1 to 7 complete stage 1, the demo API the SDKs use. Pull
 requests 8 to 10 complete stage 2, the full API.
 
-## Suggested layout
+## Package layout
 
-The layout is a suggestion; a pull request may refine it if it explains why.
+A pull request may refine this layout if it explains why.
 
 | Path | Contents |
 | --- | --- |

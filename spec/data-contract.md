@@ -325,7 +325,7 @@ entry per scheduled release, with `series_id`, `period_start`, `period_end`, and
 day of the following month. The synthetic calendar ignores weekends and
 holidays. Revisions, corrections, and withdrawals are unscheduled. The
 calendar is a published plan, so the API returns all of it whatever the
-simulated clock shows.
+simulated clock shows, to any valid customer key without an entitlement.
 
 ## Demonstration credentials
 
@@ -490,15 +490,14 @@ These decisions were settled on October 4, 2026:
     TypeScript.** The Python SDK comes first, and the other two cover the same
     workflow and pass the same checks.
 
-Version 0.2.0 settled these, also on October 4, 2026:
+The operator reviewed and settled these for version 0.2.0 on October 4, 2026:
 
 13. **API v1 uses the explicit time fields from the start.** No legacy `date`
     field is specified only to be replaced, so the migration stage needs a
     different breaking change (see Open questions).
 14. **The demo API runs on a simulated clock.** Revisions whose `available_at`
     is after the clock are invisible on every path. A test-control endpoint
-    moves the clock forward; a reset is the only way back, and it discards
-    page tokens and exports. Scenarios in which data changes during an
+    moves the clock forward, and scenarios in which data changes during an
     operation, and expiry checks, become deterministic.
 15. **Authentication and entitlements ship in stage 1.** Static API keys from
     the credentials fixture, entitlements per dataset, checked on every
@@ -514,15 +513,37 @@ Version 0.2.0 settled these, also on October 4, 2026:
 17. **An export contains every revision up to its position,** not only the
     latest, so a customer's local copy can answer `available_as_of` queries
     offline.
-18. **The catalog is visible to every valid customer key,** with an
-    `entitled` flag, so a refusal reveals nothing a not-found would hide.
+18. **Metadata is visible to every valid customer key; revisions need an
+    entitlement.** The catalog lists every dataset and series with an
+    `entitled` flag, and the release calendar is readable without an
+    entitlement, so a refusal reveals nothing a not-found would hide.
 19. **Unknown query parameters are refused.** A misspelled cutoff, or
     `published_as_of` sent to the stage 1 demo API, must not silently return
     the latest data.
 20. **A cutoff later than the server's clock is refused,** because its answer
-    could still change.
+    could still change. A cutoff equal to the clock is accepted.
+21. **Retention periods are fixed and run on the simulated clock:** 3,600
+    seconds for a query snapshot, 1,095 days for a change-stream event, and
+    86,400 seconds for an export. The change-stream period covers the whole
+    fixture history at the default clock, and expiry is tested by moving the
+    clock, so there is no settings endpoint.
+22. **Only a reset moves the clock backwards.** `PUT /test/clock` moves it
+    forward only; `POST /test/reset` may set any clock, and it discards page
+    tokens and exports so that no state from a later time survives.
+23. **A resumed page repeats every parameter of the first request,**
+    including `page_size`, and leaves omitted parameters omitted. Any
+    difference is refused, so a resumed page cannot drop a cutoff.
+24. **An item expires at the instant its period ends.** Page snapshots,
+    change-stream events, and exports are available while the clock is
+    before that instant, which is the instant `snapshot_expires_at` and
+    `expires_at` report.
+25. **The release calendar ignores the simulated clock.** It is a plan
+    published in advance, and a monitor needs upcoming releases to know what
+    is due.
 
 ## Open questions
+
+The operator reviewed this question on October 4, 2026, and left it open.
 
 - **The migration stage's breaking change.** API v1 already uses the
   explicit time fields (decision 13), so stage 4 needs a different change. One

@@ -316,7 +316,8 @@ paths:
       description: |
         Returns the scheduled releases of a series whose period lies within the
         range, whatever the clock shows, ordered by `period_start` ascending.
-        Requires entitlement to the series' dataset. Not paged.
+        Any valid customer key may read it; it requires no entitlement. Not
+        paged.
       parameters:
         - $ref: '#/components/parameters/SeriesId'
         - $ref: '#/components/parameters/PeriodStart'
@@ -341,8 +342,6 @@ paths:
           description: '`unknown_parameter`, `missing_parameter`, `invalid_parameter`.'
         '401':
           $ref: '#/components/responses/Unauthenticated'
-        '403':
-          $ref: '#/components/responses/NotEntitled'
         '404':
           $ref: '#/components/responses/NotFound'
           description: '`not_found`: no such series.'
