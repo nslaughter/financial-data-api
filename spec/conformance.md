@@ -75,7 +75,7 @@ first and last records have the listed `observation_id` values.
 
 ## Change-stream checks
 
-`change-stream.json` has four kinds of checks besides its scenarios:
+`change-stream.json` has three kinds of checks besides its scenarios:
 
 - **`position_checks`**: reset with the clock at `at`, then
   `GET /v1/datasets/core-indicators`. Its `head_position` must equal
