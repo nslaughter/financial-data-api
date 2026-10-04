@@ -13,10 +13,11 @@ them and compares results, so that every runner reaches the same verdict.
   stage over HTTP against a server started with `TEST_CONTROL=enabled` and
   the default `CLOCK_START`, and it exits with a non-zero status if any check
   fails.
-- **SDK runners** run the query checks and `apply_checks` through the SDK's
-  own methods, and run scenarios over HTTP or through the SDK where it exposes
-  the operation. Each SDK documents which scenario steps it maps to its
-  methods.
+- **SDK runners** run the query checks, `position_checks`, `read_checks`,
+  `apply_checks`, and scenarios through the SDK's own methods, or over HTTP
+  where the SDK has no method for an operation. Each SDK documents which
+  checks and scenario steps it maps to its methods. SDK runners do not run
+  `release-timing`.
 - **The monitor** runs `release-timing`.
 
 The [stage table](data-contract.md#implementations-and-conformance) says which
