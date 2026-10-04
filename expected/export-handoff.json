@@ -1,0 +1,36 @@
+{
+  "contract_version": "0.1.0",
+  "case": "export-handoff",
+  "description": "A customer loads a snapshot taken at 2026-09-10T12:30:20Z. The export file finishes writing at 12:30:50. The August revision becomes available at 12:30:40, between the two.",
+  "snapshot": {
+    "as_of": "2026-09-10T12:30:20Z",
+    "expected_position": 36,
+    "expected_observation_count": 32,
+    "expected_entries_checked": [
+      {"observation_id": "obs_aug26", "revision_id": "rev_aug26_1", "value": "102.4"}
+    ],
+    "reason": "The snapshot contains the same revisions as the full-history result as of September 4; nothing became available in between."
+  },
+  "correct_handoff": {
+    "start_after_position": 36,
+    "expected_changes": [
+      {"sequence": 37, "revision_id": "rev_aug26_2", "change_type": "source_revision", "value": "102.1"}
+    ],
+    "expected_after_applying": [
+      {"observation_id": "obs_aug26", "revision_id": "rev_aug26_2", "value": "102.1"}
+    ],
+    "reason": "The position belongs to the same instant as the snapshot, so the revision is applied after loading."
+  },
+  "incorrect_handoff": {
+    "position_taken_at": "2026-09-10T12:30:50Z",
+    "position": 37,
+    "changes_read": [],
+    "local_copy_left_at": {"observation_id": "obs_aug26", "revision_id": "rev_aug26_1", "value": "102.4"},
+    "reason": "A position taken when the file finished writing is already past the revision. The revision is absent from the snapshot and never read from the stream."
+  },
+  "naive_incremental_query": {
+    "query": {"series_id": "activity-index", "period_start": "2026-09-01", "period_end": "2026-10-01", "available_as_of": null},
+    "expected": [],
+    "reason": "Asking only for periods after the last downloaded period returns nothing, so the revision to August is missed even though every request succeeds."
+  }
+}

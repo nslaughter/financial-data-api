@@ -9,9 +9,10 @@ fintech, data pipelines, observability, and infrastructure, informed by a
 background in investment research. I help teams turn datasets into APIs whose
 meaning and delivery behavior customers can depend on.
 
-**Status:** Project brief. This repository currently contains this README.
-The API, contract, deployment, and runnable demonstrations are planned; nothing
-described here has been implemented or tested yet. The dataset is synthetic,
+**Status:** Project brief. This repository contains this README and a draft
+[data contract](spec/data-contract.md) with its fixtures and expected results.
+The API, deployment, and runnable demonstrations are planned; nothing described
+here has been implemented or tested yet. The dataset is synthetic,
 and this is a demonstration project, not client work.
 
 ## What this project demonstrates
@@ -61,11 +62,15 @@ revised to 102.1 on September 10. A proposed record looks like this:
   "series_id": "activity-index",
   "observation_id": "obs_aug26",
   "revision_id": "rev_aug26_1",
+  "revision_number": 1,
+  "change_type": "initial_release",
   "period_start": "2026-08-01",
   "period_end": "2026-09-01",
   "value": "102.4",
+  "missing_reason": null,
   "unit": "index_points",
   "published_at": "2026-09-03T12:30:00Z",
+  "received_at": "2026-09-03T12:30:04Z",
   "available_at": "2026-09-03T12:31:10Z"
 }
 ```
@@ -73,8 +78,10 @@ revised to 102.1 on September 10. A proposed record looks like this:
 The September 10 revision keeps `observation_id` and gets a new `revision_id`.
 The period runs from August 1 up to September 1, with the end excluded. A
 decimal string preserves the value's representation, and the unit is explicit.
-`published_at` records source publication; `available_at` records when an
-entitled customer could first retrieve the record through the API.
+`published_at` records source publication, `received_at` the provider's
+acquisition, and `available_at` when an entitled customer could first retrieve
+the record through the API. The [data contract](spec/data-contract.md) defines
+every field.
 
 ## How a customer will load, update, and reproduce the data
 
