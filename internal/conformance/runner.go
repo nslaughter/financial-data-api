@@ -580,7 +580,16 @@ func (x *checkRun) requestStep(st *Step, b bodies) *Failure {
 func (x *checkRun) build(req *Request, b bodies) (call, error) {
 	c := call{method: http.MethodGet, query: url.Values{}}
 	if req.Method != nil {
+		// A report of a reference that fails shows the method as written.
 		c.method = *req.Method
+		method, err := b.resolveText("method", *req.Method)
+		if err != nil {
+			return c, err
+		}
+		if method == "" {
+			return c, fmt.Errorf("method %q is empty after resolving references", *req.Method)
+		}
+		c.method = method
 	}
 	path, err := b.resolveText("path", *req.Path)
 	if err != nil {

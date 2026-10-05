@@ -396,6 +396,9 @@ func (e *Expect) check() error {
 // strings returns every string in the request that may hold a reference.
 func (r *Request) strings() []string {
 	ss := []string{*r.Path}
+	if r.Method != nil {
+		ss = append(ss, *r.Method)
+	}
 	for _, k := range sortedKeys(r.Query) {
 		ss = appendStrings(ss, r.Query[k])
 	}

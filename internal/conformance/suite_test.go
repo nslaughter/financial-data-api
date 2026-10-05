@@ -193,6 +193,8 @@ func TestParseFileIsStrict(t *testing.T) {
 		{"body_lines that is not an array", scenario(`{"request": {"path": "/v1/meta"}, "expect": {"status": 200, "body_lines": {}}}`), "body_lines must be an array"},
 		{"a reference to a later step", scenario(`{"request": {"path": "/v1/exports/${b.export_id}"}, "expect": {"status": 200}}, {"id": "b", ` + meta[1:]),
 			"${b.export_id} names no earlier request step"},
+		{"a method referring to a later step", scenario(`{"request": {"method": "${b.method}", "path": "/v1/meta"}, "expect": {"status": 200}}, {"id": "b", ` + meta[1:]),
+			"${b.method} names no earlier request step"},
 		{"a request referring to its own step", scenario(`{"id": "a", "request": {"path": "/v1/exports/${a.export_id}"}, "expect": {"status": 200}}`),
 			"${a.export_id} names no earlier request step"},
 		{"a malformed reference", scenario(`{"request": {"path": "/v1/meta"}, "expect": {"status": 200, "body": {"x": "${a}"}}}`), "malformed reference ${a}"},

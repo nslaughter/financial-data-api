@@ -682,6 +682,30 @@ func TestReferences(t *testing.T) {
 	}
 }
 
+// TestMethodReferences checks that references in a request's method are
+// resolved before the request is sent.
+func TestMethodReferences(t *testing.T) {
+	f := newFake(t)
+	f.handle("GET /v1/observations", func(w http.ResponseWriter, r *http.Request) {
+		writeProblem(w, http.StatusBadRequest, "invalid_parameter", "Invalid parameter", "PUT")
+	})
+	first := `{"id": "o", "request": {"path": "/v1/observations"}, "expect": {"status": 400, "body": {"parameter": "PUT"}}}`
+	file := parse(t, `{"scenarios": [{"name": "s", "steps": [`+first+`,
+		{"request": {"method": "${o.parameter}", "path": "/test/clock", "credential": "cred_test_control", "body": {"now": "2026-10-02T00:00:00Z"}},
+		 "expect": {"status": 200, "body": {"now": "2026-10-02T00:00:00Z"}}}
+	]}]}`)
+	mustPass(t, runOne(t, newRunner(t, f, 1), file))
+	checkRequests(t, f, "POST /test/reset", "GET /v1/observations", "PUT /test/clock")
+
+	file = parse(t, `{"scenarios": [{"name": "s", "steps": [`+first+`,
+		{"request": {"method": "${o.status}", "path": "/v1/meta"}, "expect": {"status": 200}}
+	]}]}`)
+	fail := mustFail(t, runOne(t, newRunner(t, f, 1), file), 2, "references")
+	if fail.Request != "${o.status} /v1/meta" || !strings.Contains(fail.Actual, `method "${o.status}" is a number after resolving references`) {
+		t.Errorf("request %q, actual %q", fail.Request, fail.Actual)
+	}
+}
+
 // TestReferencedNumbersAreSentInDecimal checks that a query parameter that
 // is exactly a reference to a number is sent in decimal, however the body
 // wrote the number.
