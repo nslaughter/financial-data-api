@@ -179,6 +179,104 @@ func TestReadChangesAheadOfTheStream(t *testing.T) {
 	}
 }
 
+// gapFactor multiplies every sequence of the fixtures in gapped.
+const gapFactor = 10
+
+// gapped returns the history of the embedded fixtures with every sequence
+// multiplied by gapFactor. The fixtures number each dataset's revisions from
+// 1 without gaps, so their sequences are also indexes; the contract allows
+// gaps (invariant 6).
+func gapped(t *testing.T) *History {
+	t.Helper()
+	f, _ := load(t)
+	for i := range f.Revisions {
+		f.Revisions[i].Sequence *= gapFactor
+	}
+	if vs := fixtures.Check(f); len(vs) > 0 {
+		t.Fatalf("the gapped fixtures break invariants: %v", vs)
+	}
+	h, err := New(f)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return h
+}
+
+// renumber returns revs with every sequence multiplied by gapFactor.
+func renumber(revs []fixtures.Revision) []fixtures.Revision {
+	out := make([]fixtures.Revision, len(revs))
+	for i, r := range revs {
+		r.Sequence *= gapFactor
+		out[i] = r
+	}
+	return out
+}
+
+// Positions are sequences, not indexes. With gaps between the sequences,
+// every rule answers as it does without them, renumbered, and a position
+// inside a gap answers as the sequence below it does.
+func TestPositionsAreSequences(t *testing.T) {
+	f, h := load(t)
+	g := gapped(t)
+
+	for _, r := range f.Revisions {
+		at := timestamp(t, r.AvailableAt)
+		for _, tm := range []time.Time{at.Add(-time.Second), at} {
+			if got, want := g.Position(streamDataset, tm), gapFactor*h.Position(streamDataset, tm); got != want {
+				t.Errorf("position %d at %s, want %d", got, tm.Format(timestampLayout), want)
+			}
+		}
+	}
+
+	now := timestamp(t, defaultClock)
+	head := h.Position(streamDataset, now)
+	for p := int64(0); p <= head; p++ {
+		positions := []int64{gapFactor * p}
+		if p < head {
+			positions = append(positions, gapFactor*p+gapFactor/2)
+		}
+		for _, gp := range positions {
+			if got, want := g.Snapshot(streamDataset, gp), renumber(h.Snapshot(streamDataset, p)); !reflect.DeepEqual(got, want) {
+				t.Errorf("snapshot at %d: %v, want %v", gp, ids(got), ids(want))
+			}
+			for _, s := range f.Series {
+				if s.DatasetID != streamDataset {
+					continue
+				}
+				gq := Query{SeriesID: s.SeriesID, Position: gp}
+				hq := Query{SeriesID: s.SeriesID, Position: p}
+				if got, want := g.Observations(gq), renumber(h.Observations(hq)); !reflect.DeepEqual(got, want) {
+					t.Errorf("%s observations at %d: %v, want %v", s.SeriesID, gp, ids(got), ids(want))
+				}
+				if got, want := g.Revisions(gq), renumber(h.Revisions(hq)); !reflect.DeepEqual(got, want) {
+					t.Errorf("%s revisions at %d: %v, want %v", s.SeriesID, gp, ids(got), ids(want))
+				}
+			}
+			got, err := g.ReadChanges(streamDataset, now, gp, 2)
+			if err != nil {
+				t.Fatalf("read after %d: %v", gp, err)
+			}
+			want, err := h.ReadChanges(streamDataset, now, p, 2)
+			if err != nil {
+				t.Fatalf("read after %d without gaps: %v", p, err)
+			}
+			want = Changes{
+				Events:       renumber(want.Events),
+				NextPosition: gapFactor * want.NextPosition,
+				HeadPosition: gapFactor * want.HeadPosition,
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("read after %d: events %v, next %d, head %d; want events %v, next %d, head %d",
+					gp, ids(got.Events), got.NextPosition, got.HeadPosition,
+					ids(want.Events), want.NextPosition, want.HeadPosition)
+			}
+		}
+	}
+	if _, err := g.ReadChanges(streamDataset, now, gapFactor*head+1, defaultLimit); !errors.Is(err, ErrPositionAhead) {
+		t.Errorf("after %d with head %d: error %v, want ErrPositionAhead", gapFactor*head+1, gapFactor*head, err)
+	}
+}
+
 func TestEmptyResultsAreNotNil(t *testing.T) {
 	_, h := load(t)
 	q := Query{SeriesID: "activity-index", Position: 0}
