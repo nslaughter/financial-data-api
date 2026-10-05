@@ -195,6 +195,16 @@ func TestNewHandlerAcceptsFixturesDir(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"contract_version":"0.3.0"`) {
 		t.Errorf("GET /v1/meta: %d %s", rec.Code, rec.Body)
 	}
+	// The head position is the altered sequence, available since
+	// 2026-09-10, so the directory's records are served, not the built-in
+	// ones, and 2^53 - 1 is encoded exactly.
+	rec = httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/v1/datasets/core-indicators", nil)
+	req.Header.Set("Authorization", "Bearer demo-research-key")
+	h.ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), `"head_position":9007199254740991`) {
+		t.Errorf("GET /v1/datasets/core-indicators: %d %s", rec.Code, rec.Body)
+	}
 }
 
 // alter replaces the first occurrence of old with new in the file name in
