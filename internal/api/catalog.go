@@ -121,13 +121,12 @@ func (s *Server) getSeries(w http.ResponseWriter, c *call) *problem {
 		return p
 	}
 	id := c.path["series_id"]
-	for _, sr := range s.series {
-		if sr.SeriesID == id {
-			writeJSON(w, http.StatusOK, seriesOf(sr, c.cred))
-			return nil
-		}
+	sr, ok := s.findSeries(id)
+	if !ok {
+		return notFound("There is no series %q.", id)
 	}
-	return notFound("There is no series %q.", id)
+	writeJSON(w, http.StatusOK, seriesOf(sr, c.cred))
+	return nil
 }
 
 // seriesOf describes a series to the requesting credential.

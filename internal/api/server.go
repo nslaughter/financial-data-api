@@ -75,12 +75,16 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	st, err := newState(cfg.ClockStart, cfg.Fixtures.Credentials)
+	if err != nil {
+		return nil, err
+	}
 	s := &Server{
 		contractVersion: cfg.ContractVersion,
 		history:         h,
 		datasets:        slices.Clone(cfg.Fixtures.Datasets),
 		series:          slices.Clone(cfg.Fixtures.Series),
-		state:           newState(cfg.ClockStart, cfg.Fixtures.Credentials),
+		state:           st,
 	}
 	sort.Slice(s.datasets, func(i, j int) bool { return s.datasets[i].DatasetID < s.datasets[j].DatasetID })
 	sort.Slice(s.series, func(i, j int) bool { return s.series[i].SeriesID < s.series[j].SeriesID })
@@ -111,11 +115,10 @@ type call struct {
 	endpoint string
 	// path holds the path parameters by name.
 	path map[string]string
-	// now is the clock, read once for the request.
-	now time.Time
-	// cred is the authenticated credential, or nil for an endpoint that
+	// moment holds the clock, read once for the request, the page-token key,
+	// and the authenticated credential, which is nil for an endpoint that
 	// requires none.
-	cred *credential
+	moment
 }
 
 func (s *Server) routeTable(testControl bool) []route {
@@ -131,6 +134,7 @@ func (s *Server) routeTable(testControl bool) []route {
 		{template: "/v1/datasets/{dataset_id}", endpoints: map[string]endpoint{http.MethodGet: customer(s.getDataset)}},
 		{template: "/v1/series", endpoints: map[string]endpoint{http.MethodGet: customer(s.listSeries)}},
 		{template: "/v1/series/{series_id}", endpoints: map[string]endpoint{http.MethodGet: customer(s.getSeries)}},
+		{template: "/v1/observations", endpoints: map[string]endpoint{http.MethodGet: customer(s.queryObservations)}},
 	}
 	if testControl {
 		routes = append(routes,
@@ -196,7 +200,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) *problem {
 		c.now = s.state.now()
 	} else {
 		var p *problem
-		if c.now, c.cred, p = s.authenticate(r, ep.auth); p != nil {
+		if c.moment, p = s.authenticate(r, ep.auth); p != nil {
 			return p
 		}
 	}
@@ -251,33 +255,33 @@ func (s *Server) match(segments []string) (*route, map[string]string) {
 	return nil, nil
 }
 
-// authenticate returns the clock and the active credential of kind that the
-// request's Authorization header names, read together. The scheme name is
-// case-insensitive and followed by one or more spaces, as RFC 6750 allows,
-// and the key is compared exactly.
-func (s *Server) authenticate(r *http.Request, kind string) (time.Time, *credential, *problem) {
+// authenticate returns the active credential of kind that the request's
+// Authorization header names, read together with the clock and the
+// page-token key. The scheme name is case-insensitive and followed by one or
+// more spaces, as RFC 6750 allows, and the key is compared exactly.
+func (s *Server) authenticate(r *http.Request, kind string) (moment, *problem) {
 	values := r.Header.Values("Authorization")
 	if len(values) == 0 {
-		return time.Time{}, nil, unauthenticated("The request has no Authorization header; send Authorization: Bearer <api_key>.")
+		return moment{}, unauthenticated("The request has no Authorization header; send Authorization: Bearer <api_key>.")
 	}
 	if len(values) > 1 {
-		return time.Time{}, nil, unauthenticated("The request has more than one Authorization header.")
+		return moment{}, unauthenticated("The request has more than one Authorization header.")
 	}
 	scheme, key, ok := strings.Cut(values[0], " ")
 	key = strings.TrimLeft(key, " ")
 	if !ok || !strings.EqualFold(scheme, "Bearer") || key == "" {
-		return time.Time{}, nil, unauthenticated("The Authorization header is malformed; send Authorization: Bearer <api_key>.")
+		return moment{}, unauthenticated("The Authorization header is malformed; send Authorization: Bearer <api_key>.")
 	}
-	now, cred := s.state.view(key)
-	switch {
+	m := s.state.view(key)
+	switch cred := m.cred; {
 	case cred == nil:
-		return time.Time{}, nil, unauthenticated("The key is not known.")
+		return moment{}, unauthenticated("The key is not known.")
 	case !cred.active:
-		return time.Time{}, nil, unauthenticated("The key is inactive.")
+		return moment{}, unauthenticated("The key is inactive.")
 	case cred.kind != kind && kind == customerKind:
-		return time.Time{}, nil, unauthenticated("A test-control key is not accepted under /v1; send a customer key.")
+		return moment{}, unauthenticated("A test-control key is not accepted under /v1; send a customer key.")
 	case cred.kind != kind:
-		return time.Time{}, nil, unauthenticated("A customer key is not accepted under /test; send the test-control key.")
+		return moment{}, unauthenticated("A customer key is not accepted under /test; send the test-control key.")
 	}
-	return now, cred, nil
+	return m, nil
 }
