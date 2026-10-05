@@ -13,7 +13,11 @@
 //
 // It refuses to start, exiting with status 1, on an invalid value or on
 // fixtures that break the data contract's invariants, naming the file, the
-// record, and the rule. It stops on SIGINT or SIGTERM.
+// record, and the rule. The server implements the contract version of its
+// built-in fixtures, which GET /v1/meta reports, so it also refuses fixtures
+// that record another contract version, and fixtures with a sequence of 2^53
+// or more, since spec/api.md keeps integers below 2^53. It stops on SIGINT
+// or SIGTERM.
 package main
 
 import (
@@ -21,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -95,12 +100,31 @@ func loadConfig(getenv func(string) string) (config, error) {
 	return cfg, nil
 }
 
-// newHandler loads the fixtures and returns the API they serve.
+// newHandler loads the fixtures and returns the API they serve. The server
+// implements the contract version of the built-in fixtures, and fixtures
+// from FIXTURES_DIR must record the same one.
 func newHandler(cfg config) (*api.Server, error) {
-	fsys := financialdataapi.Fixtures()
-	if cfg.fixturesDir != "" {
-		fsys = os.DirFS(cfg.fixturesDir)
+	builtIn, err := loadFixtures(financialdataapi.Fixtures())
+	if err != nil {
+		return nil, err
 	}
+	f := builtIn
+	if cfg.fixturesDir != "" {
+		if f, err = loadFixtures(os.DirFS(cfg.fixturesDir)); err != nil {
+			return nil, err
+		}
+	}
+	if f.ContractVersion != builtIn.ContractVersion {
+		return nil, fmt.Errorf("the fixtures record contract version %s, but the server implements %s", f.ContractVersion, builtIn.ContractVersion)
+	}
+	if err := fixtures.CheckIntegers(f); err != nil {
+		return nil, fmt.Errorf("the fixtures hold integers the API cannot serve:\n%w", err)
+	}
+	return api.New(api.Config{Fixtures: f, ContractVersion: builtIn.ContractVersion, ClockStart: cfg.clockStart, TestControl: cfg.testControl})
+}
+
+// loadFixtures loads the fixtures in fsys and checks the invariants.
+func loadFixtures(fsys fs.FS) (*fixtures.Fixtures, error) {
 	f, err := fixtures.Load(fsys)
 	if err != nil {
 		var vs fixtures.Violations
@@ -109,7 +133,7 @@ func newHandler(cfg config) (*api.Server, error) {
 		}
 		return nil, fmt.Errorf("the fixtures: %w", err)
 	}
-	return api.New(api.Config{Fixtures: f, ClockStart: cfg.clockStart, TestControl: cfg.testControl})
+	return f, nil
 }
 
 // run starts the server and serves until ctx is done. It returns the

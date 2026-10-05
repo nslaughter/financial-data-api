@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -79,15 +80,15 @@ func TestLoadConfig(t *testing.T) {
 
 func TestRunRefusesToStart(t *testing.T) {
 	broken := copyFixtures(t)
-	path := filepath.Join(broken, "credentials.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
+	alter(t, broken, "credentials.json", `"datasets": ["core-indicators"]`, `"datasets": ["no-such-dataset"]`)
+	// Fixtures of another contract version that are otherwise valid.
+	otherVersion := copyFixtures(t)
+	for _, name := range []string{"datasets.json", "series.json", "revisions.json", "release-calendar.json", "credentials.json"} {
+		alter(t, otherVersion, name, `"contract_version": "0.3.0"`, `"contract_version": "0.4.0"`)
 	}
-	data = bytes.Replace(data, []byte(`"datasets": ["core-indicators"]`), []byte(`"datasets": ["no-such-dataset"]`), 1)
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	// The last revision's sequence, 2^53, keeps every invariant.
+	tooHigh := copyFixtures(t)
+	alter(t, tooHigh, "revisions.json", `"sequence": 37,`, `"sequence": 9007199254740992,`)
 
 	for _, tt := range []struct {
 		name string
@@ -98,10 +99,16 @@ func TestRunRefusesToStart(t *testing.T) {
 		{"an invalid variable", map[string]string{"TEST_CONTROL": "yes"}, []string{"TEST_CONTROL"}},
 		{"fixtures that break an invariant", map[string]string{"FIXTURES_DIR": broken}, []string{"credentials.json", "cred_research", "invariant 2"}},
 		{"a directory without fixtures", map[string]string{"FIXTURES_DIR": t.TempDir()}, []string{"datasets.json"}},
+		{"fixtures of another contract version", map[string]string{"FIXTURES_DIR": otherVersion}, []string{"contract version 0.4.0", "implements 0.3.0"}},
+		{"a sequence of 2^53", map[string]string{"FIXTURES_DIR": tooHigh}, []string{"revisions.json", "rev_aug26_2", "spec/api.md", "sequence 9007199254740992"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			// A server that starts anyway stops at once and exits with status
+			// 0, instead of serving until the test times out.
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
 			var stderr bytes.Buffer
-			if code := run(context.Background(), env(tt.vars), &stderr); code == 0 {
+			if code := run(ctx, env(tt.vars), &stderr); code == 0 {
 				t.Fatal("exit status 0")
 			}
 			for _, want := range tt.want {
@@ -159,6 +166,40 @@ func TestRunServes(t *testing.T) {
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("the server did not stop")
+	}
+}
+
+// TestNewHandlerAcceptsFixturesDir checks that fixtures from FIXTURES_DIR
+// that record the built-in contract version are served, with a sequence up
+// to 2^53 - 1, and that GET /v1/meta reports the built-in contract version.
+func TestNewHandlerAcceptsFixturesDir(t *testing.T) {
+	dir := copyFixtures(t)
+	alter(t, dir, "revisions.json", `"sequence": 37,`, `"sequence": 9007199254740991,`)
+	h, err := newHandler(config{clockStart: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), fixturesDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/meta", nil))
+	if !strings.Contains(rec.Body.String(), `"contract_version":"0.3.0"`) {
+		t.Errorf("GET /v1/meta: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// alter replaces the first occurrence of old with new in the file name in
+// dir.
+func alter(t *testing.T, dir, name, old, new string) {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte(old)) {
+		t.Fatalf("%s lacks %s", name, old)
+	}
+	if err := os.WriteFile(path, bytes.Replace(data, []byte(old), []byte(new), 1), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

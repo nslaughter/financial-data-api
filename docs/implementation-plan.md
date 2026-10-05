@@ -160,6 +160,18 @@ Out of scope: running against the real server; nothing serves the API yet.
 
 Out of scope: observations, pagination, and the change stream.
 
+The operator settled three questions raised in this step's review on
+October 5, 2026, and a follow-up pull request applies them:
+
+- The `Authorization` header may separate `Bearer` from the key with one or
+  more spaces, as RFC 6750 allows.
+- `GET /v1/meta` reports the contract version built into the binary, and the
+  server refuses to start when the files in `FIXTURES_DIR` record another.
+- The server refuses to start on a fixture `sequence` above
+  9007199254740991, citing the rule in `spec/api.md` that integers stay
+  below 2^53. The next contract version adds this upper bound to invariant
+  6, and the check then cites the invariant instead.
+
 ### 5. Serve observations with pagination
 
 - `GET /v1/observations` with `available_as_of`, built on `internal/history`.

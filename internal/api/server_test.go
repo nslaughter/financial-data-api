@@ -117,12 +117,31 @@ func TestMeta(t *testing.T) {
 	}
 }
 
+// TestMetaReportsTheConfiguredContractVersion checks that GET /v1/meta
+// reports the contract version the server implements, not the one its
+// fixtures record.
+func TestMetaReportsTheConfiguredContractVersion(t *testing.T) {
+	s, err := New(Config{Fixtures: loadFixtures(t), ContractVersion: "9.9.9", ClockStart: mustTime(t, startClock)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/meta", nil))
+	if !strings.Contains(rec.Body.String(), `"contract_version":"9.9.9"`) {
+		t.Errorf("got %d %s", rec.Code, rec.Body)
+	}
+	if _, err := New(Config{Fixtures: loadFixtures(t), ClockStart: mustTime(t, startClock)}); err == nil {
+		t.Error("New accepted a config without a contract version")
+	}
+}
+
 func TestNewRefusesALateClock(t *testing.T) {
-	_, err := New(Config{Fixtures: loadFixtures(t), ClockStart: MaxClock.Add(time.Second)})
+	f := loadFixtures(t)
+	_, err := New(Config{Fixtures: f, ContractVersion: f.ContractVersion, ClockStart: MaxClock.Add(time.Second)})
 	if err == nil {
 		t.Fatal("New accepted a clock later than MaxClock")
 	}
-	if _, err := New(Config{Fixtures: loadFixtures(t), ClockStart: MaxClock}); err != nil {
+	if _, err := New(Config{Fixtures: f, ContractVersion: f.ContractVersion, ClockStart: MaxClock}); err != nil {
 		t.Fatalf("New refused MaxClock: %v", err)
 	}
 }
@@ -143,7 +162,8 @@ func TestAGetIgnoresItsBody(t *testing.T) {
 // TestPanicsAreInternalErrors checks that a handler's panic is answered with
 // a problem.
 func TestPanicsAreInternalErrors(t *testing.T) {
-	s, err := New(Config{Fixtures: loadFixtures(t), ClockStart: mustTime(t, startClock)})
+	f := loadFixtures(t)
+	s, err := New(Config{Fixtures: f, ContractVersion: f.ContractVersion, ClockStart: mustTime(t, startClock)})
 	if err != nil {
 		t.Fatal(err)
 	}

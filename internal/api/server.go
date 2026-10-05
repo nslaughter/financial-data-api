@@ -40,6 +40,9 @@ type Config struct {
 	// Fixtures are the fixtures, which must pass the invariants, as
 	// fixtures.Load returns them.
 	Fixtures *fixtures.Fixtures
+	// ContractVersion is the contract version the server implements, which
+	// GET /v1/meta reports: that of the fixtures built into the binary.
+	ContractVersion string
 	// ClockStart is the clock at startup and after a reset without a
 	// clock. It is no later than MaxClock.
 	ClockStart time.Time
@@ -62,6 +65,9 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Fixtures == nil {
 		return nil, errors.New("api: no fixtures")
 	}
+	if cfg.ContractVersion == "" {
+		return nil, errors.New("api: no contract version")
+	}
 	if cfg.ClockStart.After(MaxClock) {
 		return nil, fmt.Errorf("api: the clock start %s is later than %s", formatTimestamp(cfg.ClockStart), formatTimestamp(MaxClock))
 	}
@@ -70,7 +76,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{
-		contractVersion: cfg.Fixtures.ContractVersion,
+		contractVersion: cfg.ContractVersion,
 		history:         h,
 		datasets:        slices.Clone(cfg.Fixtures.Datasets),
 		series:          slices.Clone(cfg.Fixtures.Series),
@@ -247,7 +253,8 @@ func (s *Server) match(segments []string) (*route, map[string]string) {
 
 // authenticate returns the clock and the active credential of kind that the
 // request's Authorization header names, read together. The scheme name is
-// case-insensitive, and the key is compared exactly.
+// case-insensitive and followed by one or more spaces, as RFC 6750 allows,
+// and the key is compared exactly.
 func (s *Server) authenticate(r *http.Request, kind string) (time.Time, *credential, *problem) {
 	values := r.Header.Values("Authorization")
 	if len(values) == 0 {
@@ -257,6 +264,7 @@ func (s *Server) authenticate(r *http.Request, kind string) (time.Time, *credent
 		return time.Time{}, nil, unauthenticated("The request has more than one Authorization header.")
 	}
 	scheme, key, ok := strings.Cut(values[0], " ")
+	key = strings.TrimLeft(key, " ")
 	if !ok || !strings.EqualFold(scheme, "Bearer") || key == "" {
 		return time.Time{}, nil, unauthenticated("The Authorization header is malformed; send Authorization: Bearer <api_key>.")
 	}
