@@ -35,10 +35,9 @@ const (
 	tokenKeyBytes = 32
 )
 
-// tokenEncoding encodes a token's parts. It is strict, so a token whose
-// encoding was altered without changing the bytes it decodes to is still
-// refused.
-var tokenEncoding = base64.RawURLEncoding.Strict()
+// tokenEncoding encodes a token's parts. A part is accepted only in the
+// form tokenEncoding gives it, as decodeTokenPart checks.
+var tokenEncoding = base64.RawURLEncoding
 
 // newTokenKey returns a key for signing page tokens, from crypto/rand.
 func newTokenKey() ([]byte, error) {
@@ -82,6 +81,18 @@ func tokenMAC(key, payload []byte) []byte {
 	return m.Sum(nil)
 }
 
+// decodeTokenPart decodes a part of a token, which must be exactly the
+// encoding of the bytes it decodes to. The signature covers only those bytes,
+// and even a strict decoder skips CR and LF, so without this a token whose
+// encoding was altered without changing its bytes would be accepted.
+func decodeTokenPart(s string) ([]byte, bool) {
+	b, err := tokenEncoding.DecodeString(s)
+	if err != nil || tokenEncoding.EncodeToString(b) != s {
+		return nil, false
+	}
+	return b, true
+}
+
 // verifyToken returns the token that s encodes if key signed it. A token
 // signed with an earlier key, from before the last reset or restart, fails
 // like an altered one.
@@ -90,12 +101,12 @@ func verifyToken(key []byte, s string) (pageToken, bool) {
 	if !ok {
 		return pageToken{}, false
 	}
-	payload, err := tokenEncoding.DecodeString(encodedPayload)
-	if err != nil {
+	payload, ok := decodeTokenPart(encodedPayload)
+	if !ok {
 		return pageToken{}, false
 	}
-	mac, err := tokenEncoding.DecodeString(encodedMAC)
-	if err != nil || !hmac.Equal(mac, tokenMAC(key, payload)) {
+	mac, ok := decodeTokenPart(encodedMAC)
+	if !ok || !hmac.Equal(mac, tokenMAC(key, payload)) {
 		return pageToken{}, false
 	}
 	var t pageToken

@@ -163,7 +163,7 @@ func TestPageTokens(t *testing.T) {
 	wantOK(t, s.observations(withToken(query, token)))
 
 	// A token is refused if any part of it is altered, including bits its
-	// encoding leaves unused.
+	// encoding leaves unused and line breaks a base64 decoder skips.
 	payload, mac, _ := strings.Cut(token, ".")
 	flip := func(s string, i int) string {
 		b := []byte(s)
@@ -179,6 +179,10 @@ func TestPageTokens(t *testing.T) {
 		"no signature":    payload,
 		"empty signature": payload + ".",
 		"padding":         token + "=",
+		"LF in payload":   payload[:4] + "\n" + payload[4:] + "." + mac,
+		"CR in payload":   payload + "\r." + mac,
+		"LF in signature": payload + "." + mac + "\n",
+		"CR in signature": payload + "." + mac[:4] + "\r\n" + mac[4:],
 		"another key":     pageToken{Endpoint: "GET /v1/observations", Credential: "cred_research", Params: map[string]string{"series_id": "activity-index", "page_size": "10"}, Position: 37, Snapshot: mustTime(t, startClock).Unix(), Offset: 10}.sign(make([]byte, tokenKeyBytes)),
 		"not a token":     "not-a-page-token",
 	} {
