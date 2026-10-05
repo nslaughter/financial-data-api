@@ -20,7 +20,8 @@ func TestAuthentication(t *testing.T) {
 		{"a scheme without a key", "/v1/series", req{auth: "Bearer"}},
 		{"a scheme and a space", "/v1/series", req{auth: "Bearer "}},
 		{"a key without a scheme", "/v1/series", req{auth: researchKey}},
-		{"an extra space", "/v1/series", req{auth: "Bearer  " + researchKey}},
+		{"a tab after the scheme", "/v1/series", req{auth: "Bearer\t" + researchKey}},
+		{"a space and a tab after the scheme", "/v1/series", req{auth: "Bearer \t" + researchKey}},
 		{"a key in another case", "/v1/series", req{auth: "Bearer " + strings.ToUpper(researchKey)}},
 		{"the test-control key under /v1", "/v1/series", req{key: testControlKey}},
 		{"a customer key under /test", "/test/clock", req{key: researchKey}},
@@ -35,7 +36,9 @@ func TestAuthentication(t *testing.T) {
 			}
 		})
 	}
-	for _, auth := range []string{"Bearer " + researchKey, "bearer " + researchKey, "BEARER " + researchKey} {
+	// The scheme is case-insensitive, and RFC 6750 allows one or more spaces
+	// after it.
+	for _, auth := range []string{"Bearer " + researchKey, "bearer " + researchKey, "BEARER " + researchKey, "Bearer  " + researchKey, "Bearer   " + researchKey} {
 		wantOK(t, s.do("GET", "/v1/series", req{auth: auth}))
 	}
 

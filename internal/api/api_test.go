@@ -78,7 +78,7 @@ func newServer(t *testing.T, testControl bool) *testServer {
 // start, with test control enabled or not.
 func newServerFor(t *testing.T, f *fixtures.Fixtures, testControl bool) *testServer {
 	t.Helper()
-	s, err := New(Config{Fixtures: f, ClockStart: mustTime(t, startClock), TestControl: testControl})
+	s, err := New(Config{Fixtures: f, ContractVersion: f.ContractVersion, ClockStart: mustTime(t, startClock), TestControl: testControl})
 	if err != nil {
 		t.Fatal(err)
 	}

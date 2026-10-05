@@ -24,7 +24,7 @@ start until the operator records the decision here.
 | 1. Load the fixtures and enforce the invariants | Done | [#5](https://github.com/nslaughter/financial-data-api/pull/5) |
 | 2. Implement the data rules | Done | [#6](https://github.com/nslaughter/financial-data-api/pull/6) |
 | 3. Build the conformance runner | Done | [#7](https://github.com/nslaughter/financial-data-api/pull/7) |
-| 4. Serve the foundation | Done | [#8](https://github.com/nslaughter/financial-data-api/pull/8) |
+| 4. Serve the foundation | Done | [#8](https://github.com/nslaughter/financial-data-api/pull/8), [#9](https://github.com/nslaughter/financial-data-api/pull/9) |
 | 5. Serve observations with pagination | Not started | |
 | 6. Serve the change stream | Not started | |
 | 7. Publish the demo API image | Needs operator decision | |
@@ -159,6 +159,19 @@ Out of scope: running against the real server; nothing serves the API yet.
   - each of the four variables set to an empty value takes its default.
 
 Out of scope: observations, pagination, and the change stream.
+
+The operator settled three questions raised in this step's review on
+October 5, 2026, and [#9](https://github.com/nslaughter/financial-data-api/pull/9)
+applies them:
+
+- The `Authorization` header may separate `Bearer` from the key with one or
+  more spaces, as RFC 6750 allows.
+- `GET /v1/meta` reports the contract version built into the binary, and the
+  server refuses to start when the files in `FIXTURES_DIR` record another.
+- The server refuses to start on a fixture `sequence` above
+  9007199254740991, citing the rule in `spec/api.md` that integers stay
+  below 2^53. The next contract version adds this upper bound to invariant
+  6, and the check then cites the invariant instead.
 
 ### 5. Serve observations with pagination
 

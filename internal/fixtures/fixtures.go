@@ -117,44 +117,92 @@ func Load(fsys fs.FS) (*Fixtures, error) {
 
 // decode reads the fixture files without checking the invariants.
 func decode(fsys fs.FS) (*Fixtures, error) {
-	var (
-		f        Fixtures
-		versions [5]string
-		err      error
-	)
-	if versions[0], f.Datasets, err = readFile[Dataset](fsys, DatasetsFile, "datasets"); err != nil {
+	version, err := ReadContractVersion(fsys)
+	if err != nil {
 		return nil, err
 	}
-	if versions[1], f.Series, err = readFile[Series](fsys, SeriesFile, "series"); err != nil {
+	f := Fixtures{ContractVersion: version}
+	if f.Datasets, err = readFile[Dataset](fsys, DatasetsFile, "datasets"); err != nil {
 		return nil, err
 	}
-	if versions[2], f.Revisions, err = readFile[Revision](fsys, RevisionsFile, "revisions"); err != nil {
+	if f.Series, err = readFile[Series](fsys, SeriesFile, "series"); err != nil {
 		return nil, err
 	}
-	if versions[3], f.Releases, err = readFile[Release](fsys, CalendarFile, "releases"); err != nil {
+	if f.Revisions, err = readFile[Revision](fsys, RevisionsFile, "revisions"); err != nil {
 		return nil, err
 	}
-	if versions[4], f.Credentials, err = readFile[Credential](fsys, CredentialsFile, "credentials", "description"); err != nil {
+	if f.Releases, err = readFile[Release](fsys, CalendarFile, "releases"); err != nil {
 		return nil, err
 	}
-	files := [5]string{DatasetsFile, SeriesFile, RevisionsFile, CalendarFile, CredentialsFile}
-	for i := 1; i < len(files); i++ {
-		if versions[i] != versions[0] {
-			return nil, fmt.Errorf("%s: contract_version %q differs from %q in %s",
-				files[i], versions[i], versions[0], files[0])
-		}
+	if f.Credentials, err = readFile[Credential](fsys, CredentialsFile, "credentials", "description"); err != nil {
+		return nil, err
 	}
-	f.ContractVersion = versions[0]
 	return &f, nil
 }
 
+// ReadContractVersion returns the contract_version that every fixture file
+// in fsys records. It reads no other member, so a caller can recognize
+// fixtures of another contract version before decoding their records by
+// this version's rules. A file that is missing or is not a JSON object, a
+// contract_version that is missing, repeated, or not a string, and a
+// contract_version that differs from the first file's are errors naming the
+// file.
+func ReadContractVersion(fsys fs.FS) (string, error) {
+	files := [...]string{DatasetsFile, SeriesFile, RevisionsFile, CalendarFile, CredentialsFile}
+	var first string
+	for i, file := range files {
+		data, err := fs.ReadFile(fsys, file)
+		if err != nil {
+			return "", err
+		}
+		version, err := contractVersion(data)
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", file, err)
+		}
+		if i == 0 {
+			first = version
+		} else if version != first {
+			return "", fmt.Errorf("%s: contract_version %q differs from %q in %s", file, version, first, files[0])
+		}
+	}
+	return first, nil
+}
+
+// contractVersion returns the contract_version member of the JSON object
+// data, ignoring its other members.
+func contractVersion(data []byte) (string, error) {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(data, &top); err != nil {
+		return "", err
+	}
+	if top == nil {
+		return "", fmt.Errorf("null, not an object")
+	}
+	if err := uniqueMembers(data); err != nil {
+		return "", err
+	}
+	raw, ok := top["contract_version"]
+	if !ok {
+		return "", fmt.Errorf("missing member %q", "contract_version")
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return "", fmt.Errorf("member %q is null", "contract_version")
+	}
+	var version string
+	if err := json.Unmarshal(raw, &version); err != nil {
+		return "", fmt.Errorf("contract_version: %w", err)
+	}
+	return version, nil
+}
+
 // readFile reads a fixture file: a JSON object whose members are
-// contract_version, the array of records named by member, and the string
-// members named by extra. It decodes each record into a T.
-func readFile[T any](fsys fs.FS, file, member string, extra ...string) (string, []T, error) {
+// contract_version, which ReadContractVersion reads, the array of records
+// named by member, and the string members named by extra. It decodes each
+// record into a T.
+func readFile[T any](fsys fs.FS, file, member string, extra ...string) ([]T, error) {
 	data, err := fs.ReadFile(fsys, file)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	nullable := map[string]bool{"contract_version": false, member: false}
 	for _, name := range extra {
@@ -162,29 +210,25 @@ func readFile[T any](fsys fs.FS, file, member string, extra ...string) (string, 
 	}
 	top, err := members(data, nullable)
 	if err != nil {
-		return "", nil, fmt.Errorf("%s: %w", file, err)
-	}
-	var version string
-	if err := json.Unmarshal(top["contract_version"], &version); err != nil {
-		return "", nil, fmt.Errorf("%s: contract_version: %w", file, err)
+		return nil, fmt.Errorf("%s: %w", file, err)
 	}
 	for _, name := range extra {
 		var s string
 		if err := json.Unmarshal(top[name], &s); err != nil {
-			return "", nil, fmt.Errorf("%s: %s: %w", file, name, err)
+			return nil, fmt.Errorf("%s: %s: %w", file, name, err)
 		}
 	}
 	var raws []json.RawMessage
 	if err := json.Unmarshal(top[member], &raws); err != nil {
-		return "", nil, fmt.Errorf("%s: %s: %w", file, member, err)
+		return nil, fmt.Errorf("%s: %s: %w", file, member, err)
 	}
 	records := make([]T, len(raws))
 	for i, raw := range raws {
 		if err := decodeObject(raw, &records[i]); err != nil {
-			return "", nil, fmt.Errorf("%s: %s[%d]: %w", file, member, i, err)
+			return nil, fmt.Errorf("%s: %s[%d]: %w", file, member, i, err)
 		}
 	}
-	return version, records, nil
+	return records, nil
 }
 
 // decodeObject decodes the JSON object data into v, a pointer to a struct.
