@@ -36,8 +36,10 @@ The README describes the project for people; it is not a specification.
 
 ## Implementation guidance
 
-- Go, standard library first. The server needs no third-party dependencies;
-  the conformance runner may use one for OpenAPI response validation.
+- Go, standard library first. The server needs no third-party dependencies.
+  For OpenAPI response validation, the conformance runner uses two: a JSON
+  Schema validator and a YAML parser. The operator chose these over a single
+  OpenAPI library because none validates OpenAPI 3.1 on Go 1.22.
 - Response structs keep the field order of the contract's tables and never
   use `omitempty`; nullable fields are pointers, so absent values encode as
   `null`.
