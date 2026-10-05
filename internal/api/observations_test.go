@@ -114,6 +114,9 @@ func TestPagination(t *testing.T) {
 		if body["next_page_token"] == nil {
 			break
 		}
+		if page == 4 {
+			t.Fatal("the fourth page has a token")
+		}
 		body = wantOK(t, s.observations(withToken(query, body["next_page_token"])))
 	}
 	if fmt.Sprint(got) != fmt.Sprint(all) {
@@ -252,7 +255,11 @@ func TestConcurrentPaging(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			r := s.observations(query)
-			for r.status == 200 && r.body["next_page_token"] != nil {
+			for page := 1; r.status == 200 && r.body["next_page_token"] != nil; page++ {
+				if page == 7 {
+					t.Error("the seventh page has a token")
+					return
+				}
 				r = s.observations(withToken(query, r.body["next_page_token"]))
 			}
 			switch code := r.body["code"]; {
