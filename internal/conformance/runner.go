@@ -117,9 +117,12 @@ func New(cfg Config) (*Runner, error) {
 	return r, nil
 }
 
-// Run runs the checks of files whose names contain filter, in the order of
-// files and of each file's members, and returns their results. Each check
-// starts with a reset, so the checks are independent.
+// Run runs the checks and scenarios of files, in the order of files and of
+// each file's members, and returns their results. It runs only the checks
+// and scenarios whose own name contains filter, so an empty filter runs them
+// all; filter does not choose files, which Select does. A scenario that does
+// not run at the runner's stage is reported as skipped. Each check starts
+// with a reset, so the checks are independent.
 func (r *Runner) Run(ctx context.Context, files []*File, filter string) []Result {
 	var results []Result
 	report := func(res Result) {
