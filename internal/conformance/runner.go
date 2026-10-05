@@ -599,31 +599,34 @@ func (x *checkRun) build(req *Request, b bodies) (call, error) {
 	}
 	c.path = path
 	for _, k := range sortedKeys(req.Query) {
-		var values []any
-		switch v := req.Query[k].(type) {
-		case string:
-			values = []any{v}
-		case []any:
-			values = v
+		// The whole value is resolved before its type is known, because a
+		// string that is exactly one reference may stand for an array.
+		v, err := b.resolve(req.Query[k])
+		if err != nil {
+			return c, err
 		}
-		for _, v := range values {
-			r, err := b.resolve(v)
-			if err != nil {
-				return c, err
-			}
-			switch r := r.(type) {
+		values, isArray := v.([]any)
+		if !isArray {
+			values = []any{v}
+		}
+		for _, e := range values {
+			switch e := e.(type) {
 			case nil:
 			case string:
-				c.query.Add(k, r)
+				c.query.Add(k, e)
 			case json.Number:
 				// A number is sent in decimal, however the body wrote it.
-				text, err := decimal(r)
+				text, err := decimal(e)
 				if err != nil {
 					return c, fmt.Errorf("query parameter %s: %w", k, err)
 				}
 				c.query.Add(k, text)
 			default:
-				return c, fmt.Errorf("query parameter %s is %s after resolving references; it must be a string, a number, or null", k, jsonType(r))
+				what := jsonType(e)
+				if isArray {
+					what = "an array holding " + what
+				}
+				return c, fmt.Errorf("query parameter %s is %s after resolving references; it must be a string, a number, null, or an array of them", k, what)
 			}
 		}
 	}

@@ -669,6 +669,11 @@ func TestReferences(t *testing.T) {
 			steps:   `{"request": {"path": "/v1/datasets/core-indicators/changes", "query": {"after": "${c.coverage}"}}, "expect": {"status": 200}}`,
 			request: "GET /v1/datasets/core-indicators/changes", want: "query parameter after is an object after resolving references", step: 2,
 		},
+		{
+			name:    "an array of objects in a query parameter",
+			steps:   `{"request": {"path": "/v1/datasets/core-indicators/changes", "query": {"after": "${c.files}"}}, "expect": {"status": 200}}`,
+			request: "GET /v1/datasets/core-indicators/changes", want: "query parameter after is an array holding an object after resolving references", step: 2,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			text := `{"scenarios": [{"name": "s", "steps": [
@@ -802,6 +807,25 @@ func TestReferencedNumbersAreSentInDecimal(t *testing.T) {
 		"GET /v1/datasets/core-indicators",
 		"GET /v1/datasets/core-indicators/changes?after=36",
 	)
+}
+
+// TestQueryReferencesToArrays checks that a query parameter that is exactly a
+// reference to an array of strings is sent once per element, in order.
+func TestQueryReferencesToArrays(t *testing.T) {
+	f := newFake(t)
+	m := meta()
+	m["supported_api_versions"] = []string{"v2", "v1"}
+	f.reply("GET /v1/meta", http.StatusOK, m)
+	f.handle("GET /v1/observations", func(w http.ResponseWriter, r *http.Request) {
+		writeProblem(w, http.StatusBadRequest, "invalid_parameter", "Invalid parameter", "series_id")
+	})
+	file := parse(t, `{"scenarios": [{"name": "s", "steps": [
+		{"id": "m", "request": {"path": "/v1/meta"}, "expect": {"status": 200}},
+		{"request": {"path": "/v1/observations", "query": {"series_id": "${m.supported_api_versions}"}},
+		 "expect": {"status": 400, "code": "invalid_parameter"}}
+	]}]}`)
+	mustPass(t, runOne(t, newRunner(t, f, 1), file))
+	checkRequests(t, f, "POST /test/reset", "GET /v1/meta", "GET /v1/observations?series_id=v2&series_id=v1")
 }
 
 func TestRepeatedQueryParameters(t *testing.T) {
