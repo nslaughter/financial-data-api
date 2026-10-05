@@ -3,10 +3,14 @@ package history
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,6 +43,14 @@ var queryFiles = []string{
 	"provider-correction",
 	"late-source-release",
 	"published-as-of",
+}
+
+// scenarioFiles are the files whose scenarios include reads of the revision
+// history or a change stream, which these tests answer without HTTP: see
+// asRead.
+var scenarioFiles = []string{
+	"change-stream",
+	"revision-history",
 }
 
 // expectedFile is a file in expected/. Members these tests do not run, which
@@ -80,6 +92,45 @@ type readCheck struct {
 	ExpectedNextPosition int64   `json:"expected_next_position"`
 	ExpectedHeadPosition int64   `json:"expected_head_position"`
 	Reason               string  `json:"reason"`
+}
+
+// scenario is a scenario as spec/conformance.md describes it. Members these
+// tests do not act on are kept raw, so that a step using them is recognized
+// and left to the API runner.
+type scenario struct {
+	Name              string          `json:"name"`
+	Reason            string          `json:"reason"`
+	Clock             *string         `json:"clock"`
+	Stages            json.RawMessage `json:"stages"`
+	Steps             []scenarioStep  `json:"steps"`
+	ExpectedLocalCopy json.RawMessage `json:"expected_local_copy"`
+}
+
+type scenarioStep struct {
+	ID            string          `json:"id"`
+	SetClock      json.RawMessage `json:"set_clock"`
+	SetCredential json.RawMessage `json:"set_credential"`
+	Reset         json.RawMessage `json:"reset"`
+	Request       *stepRequest    `json:"request"`
+	Expect        *stepExpect     `json:"expect"`
+}
+
+type stepRequest struct {
+	Method        *string         `json:"method"`
+	Path          string          `json:"path"`
+	Query         map[string]any  `json:"query"`
+	Credential    json.RawMessage `json:"credential"`
+	Authorization json.RawMessage `json:"authorization"`
+	Body          json.RawMessage `json:"body"`
+}
+
+type stepExpect struct {
+	Status     int             `json:"status"`
+	Code       *string         `json:"code"`
+	Body       any             `json:"body"`
+	Headers    json.RawMessage `json:"headers"`
+	BodySHA256 json.RawMessage `json:"body_sha256"`
+	BodyLines  json.RawMessage `json:"body_lines"`
 }
 
 // load returns the embedded fixtures and their history.
@@ -280,6 +331,183 @@ func TestReadChecks(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestScenarios runs the scenarios of scenarioFiles whose every step is a
+// read that asRead accepts; the API runner runs the rest. Each runs at its
+// clock, and its first failing step ends it, as spec/conformance.md
+// describes.
+func TestScenarios(t *testing.T) {
+	f, h := load(t)
+	for _, name := range scenarioFiles {
+		t.Run(name, func(t *testing.T) {
+			var file expectedFile
+			readExpected(t, f, name, &file)
+			var scenarios []scenario
+			dec := json.NewDecoder(bytes.NewReader(file.Scenarios))
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&scenarios); err != nil {
+				t.Fatalf("scenarios: %v", err)
+			}
+			ran := 0
+			for _, s := range scenarios {
+				reads, ok := readsOf(s)
+				if !ok {
+					continue
+				}
+				ran++
+				t.Run(s.Name, func(t *testing.T) {
+					clock := clockOf(t, s.Clock)
+					for i, r := range reads {
+						if d := runRead(t, f, h, clock, r); d != "" {
+							t.Fatalf("step %d: %s", i+1, d)
+						}
+					}
+				})
+			}
+			if ran == 0 {
+				t.Fatal("no scenario only reads the revision history or a change stream")
+			}
+		})
+	}
+}
+
+// read is a request step these tests answer without HTTP: a GET of the
+// revision history or of a dataset's change stream, with the default
+// credential and only the parameters that select what is read.
+type read struct {
+	dataset string             // the change stream's dataset, or "" for the revision history
+	params  map[string]*string // a null parameter is not sent
+	expect  *stepExpect
+}
+
+// readErrors are the errors ReadChanges returns, by their problem codes in
+// spec/api.md.
+var readErrors = map[string]error{
+	"position_ahead":   ErrPositionAhead,
+	"position_expired": ErrPositionExpired,
+}
+
+// readsOf returns the steps of a scenario as reads, or false when a step is
+// not one asRead accepts.
+func readsOf(s scenario) ([]read, bool) {
+	reads := make([]read, len(s.Steps))
+	for i, step := range s.Steps {
+		r, ok := asRead(step)
+		if !ok {
+			return nil, false
+		}
+		reads[i] = r
+	}
+	return reads, true
+}
+
+// asRead returns a step as a read, or false when the API runner must run it:
+// another action or endpoint; a method, a credential, or a body; a parameter
+// that pages, or that the endpoint refuses; or an expectation of headers, of
+// raw bytes, or of an error other than those ReadChanges returns.
+func asRead(s scenarioStep) (read, bool) {
+	if s.SetClock != nil || s.SetCredential != nil || s.Reset != nil || s.Request == nil || s.Expect == nil {
+		return read{}, false
+	}
+	req, exp := s.Request, s.Expect
+	if req.Method != nil && *req.Method != "GET" ||
+		req.Credential != nil || req.Authorization != nil || req.Body != nil ||
+		exp.Headers != nil || exp.BodySHA256 != nil || exp.BodyLines != nil {
+		return read{}, false
+	}
+	r := read{params: make(map[string]*string, len(req.Query)), expect: exp}
+	var selecting []string
+	if req.Path == "/v1/revisions" {
+		selecting = []string{"series_id", "period_start", "period_end", "available_as_of"}
+	} else if dataset, ok := changesDataset(req.Path); ok {
+		r.dataset = dataset
+		selecting = []string{"after", "limit"}
+	} else {
+		return read{}, false
+	}
+	for name, value := range req.Query {
+		if !slices.Contains(selecting, name) {
+			return read{}, false
+		}
+		switch v := value.(type) {
+		case nil:
+			r.params[name] = nil
+		case string:
+			r.params[name] = &v
+		default:
+			return read{}, false
+		}
+	}
+	if exp.Code == nil {
+		return r, exp.Status == 200 // HTTP's OK
+	}
+	_, ok := readErrors[*exp.Code]
+	return r, ok && r.dataset != ""
+}
+
+// changesDataset returns the dataset of a /v1/datasets/{dataset_id}/changes
+// path, or false when path is not one.
+func changesDataset(path string) (string, bool) {
+	rest, ok := strings.CutPrefix(path, "/v1/datasets/")
+	if !ok {
+		return "", false
+	}
+	dataset, ok := strings.CutSuffix(rest, "/changes")
+	return dataset, ok && dataset != "" && !strings.Contains(dataset, "/")
+}
+
+// runRead answers a read at the clock as the API does, and describes the
+// first difference from the step's expectation, or returns "" when the
+// answer matches. An expected error is compared by its problem code alone:
+// its status and its problem's members are the API's.
+func runRead(t *testing.T, f *fixtures.Fixtures, h *History, clock time.Time, r read) string {
+	t.Helper()
+	var body any
+	if r.dataset == "" {
+		// Revisions returns the whole history, so the response holds it in
+		// one page, without a next page.
+		q := queryOf(t, f, h, r.params, clock)
+		body = map[string]any{
+			"data":            h.Revisions(q),
+			"position":        q.Position,
+			"next_page_token": nil,
+		}
+	} else {
+		v := r.params["after"]
+		if v == nil {
+			t.Fatal("no after, which the API requires")
+		}
+		after, err := strconv.ParseInt(*v, 10, 64)
+		if err != nil {
+			t.Fatalf("after: %v", err)
+		}
+		limit := defaultLimit
+		if v := r.params["limit"]; v != nil {
+			if limit, err = strconv.Atoi(*v); err != nil {
+				t.Fatalf("limit: %v", err)
+			}
+		}
+		c, err := h.ReadChanges(r.dataset, clock, after, limit)
+		if r.expect.Code != nil {
+			if want := readErrors[*r.expect.Code]; !errors.Is(err, want) {
+				return fmt.Sprintf("error %v, want %v", err, want)
+			}
+			return ""
+		}
+		if err != nil {
+			return fmt.Sprintf("ReadChanges: %v", err)
+		}
+		body = map[string]any{
+			"data":          c.Events,
+			"next_position": c.NextPosition,
+			"head_position": c.HeadPosition,
+		}
+	}
+	if r.expect.Body == nil {
+		return ""
+	}
+	return match("body", r.expect.Body, asJSON(t, body))
 }
 
 // asJSON returns v as a JSON value would decode: maps, slices, strings,
