@@ -23,7 +23,7 @@ start until the operator records the decision here.
 | --- | --- | --- |
 | 1. Load the fixtures and enforce the invariants | Done | [#5](https://github.com/nslaughter/financial-data-api/pull/5) |
 | 2. Implement the data rules | Done | [#6](https://github.com/nslaughter/financial-data-api/pull/6) |
-| 3. Build the conformance runner | Not started | |
+| 3. Build the conformance runner | Done | [#7](https://github.com/nslaughter/financial-data-api/pull/7) |
 | 4. Serve the foundation | Not started | |
 | 5. Serve observations with pagination | Not started | |
 | 6. Serve the change stream | Not started | |
@@ -38,7 +38,7 @@ A pull request may refine this layout if it explains why.
 
 | Path | Contents |
 | --- | --- |
-| `fixtures.go` | A root package that embeds `fixtures/*.json`, so the binary carries the fixtures of its contract version. |
+| `fixtures.go`, `conformance.go` | A root package that embeds `fixtures/*.json`, so the binary carries the fixtures of its contract version, and `expected/*.json` and `spec/openapi.yaml`, which the conformance runner checks a server against. `go:embed` cannot reach a parent directory, and the contract directories hold no Go files, so these embeds belong to the root package. |
 | `internal/fixtures` | Fixture types, loading, and the invariant checks. |
 | `internal/history` | The data rules as pure functions: visibility, head positions, both cutoffs, the revision history, change-stream reads and retention, and the canonical export bytes. No HTTP. |
 | `internal/api` | Routing, request parsing, errors, authentication, entitlements, pagination tokens, handlers, and test control. |

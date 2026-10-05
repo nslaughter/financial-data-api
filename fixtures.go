@@ -1,6 +1,7 @@
-// Package financialdataapi carries the fixtures of the contract version this
-// module implements, so a binary built from it serves the fixtures it was
-// built with.
+// Package financialdataapi carries the contract version this module
+// implements: the fixtures, so a binary built from it serves the fixtures it
+// was built with, and the expected results and OpenAPI document that the
+// conformance runner checks a server against.
 package financialdataapi
 
 import (
