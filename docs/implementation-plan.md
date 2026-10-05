@@ -24,7 +24,7 @@ start until the operator records the decision here.
 | 1. Load the fixtures and enforce the invariants | Done | [#5](https://github.com/nslaughter/financial-data-api/pull/5) |
 | 2. Implement the data rules | Done | [#6](https://github.com/nslaughter/financial-data-api/pull/6) |
 | 3. Build the conformance runner | Done | [#7](https://github.com/nslaughter/financial-data-api/pull/7) |
-| 4. Serve the foundation | Not started | |
+| 4. Serve the foundation | Done | [#8](https://github.com/nslaughter/financial-data-api/pull/8) |
 | 5. Serve observations with pagination | Not started | |
 | 6. Serve the change stream | Not started | |
 | 7. Publish the demo API image | Needs operator decision | |
