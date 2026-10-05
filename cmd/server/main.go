@@ -102,7 +102,10 @@ func loadConfig(getenv func(string) string) (config, error) {
 
 // newHandler loads the fixtures and returns the API they serve. The server
 // implements the contract version of the built-in fixtures, and fixtures
-// from FIXTURES_DIR must record the same one.
+// from FIXTURES_DIR must record the same one. Their version is checked
+// before their records, since another version's records may have other
+// members or rules, and refusing them by this version's would hide the
+// mismatch.
 func newHandler(cfg config) (*api.Server, error) {
 	builtIn, err := loadFixtures(financialdataapi.Fixtures())
 	if err != nil {
@@ -110,12 +113,17 @@ func newHandler(cfg config) (*api.Server, error) {
 	}
 	f := builtIn
 	if cfg.fixturesDir != "" {
-		if f, err = loadFixtures(os.DirFS(cfg.fixturesDir)); err != nil {
+		fsys := os.DirFS(cfg.fixturesDir)
+		version, err := fixtures.ReadContractVersion(fsys)
+		if err != nil {
+			return nil, fmt.Errorf("the fixtures: %w", err)
+		}
+		if version != builtIn.ContractVersion {
+			return nil, fmt.Errorf("the fixtures record contract version %s, but the server implements %s", version, builtIn.ContractVersion)
+		}
+		if f, err = loadFixtures(fsys); err != nil {
 			return nil, err
 		}
-	}
-	if f.ContractVersion != builtIn.ContractVersion {
-		return nil, fmt.Errorf("the fixtures record contract version %s, but the server implements %s", f.ContractVersion, builtIn.ContractVersion)
 	}
 	if err := fixtures.CheckIntegers(f); err != nil {
 		return nil, fmt.Errorf("the fixtures hold integers the API cannot serve:\n%w", err)

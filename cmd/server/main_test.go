@@ -81,11 +81,21 @@ func TestLoadConfig(t *testing.T) {
 func TestRunRefusesToStart(t *testing.T) {
 	broken := copyFixtures(t)
 	alter(t, broken, "credentials.json", `"datasets": ["core-indicators"]`, `"datasets": ["no-such-dataset"]`)
-	// Fixtures of another contract version that are otherwise valid.
-	otherVersion := copyFixtures(t)
-	for _, name := range []string{"datasets.json", "series.json", "revisions.json", "release-calendar.json", "credentials.json"} {
-		alter(t, otherVersion, name, `"contract_version": "0.3.0"`, `"contract_version": "0.4.0"`)
+	// otherVersion copies the fixtures, recording contract version 0.4.0 in
+	// every file.
+	otherVersion := func() string {
+		dir := copyFixtures(t)
+		for _, name := range []string{"datasets.json", "series.json", "revisions.json", "release-calendar.json", "credentials.json"} {
+			alter(t, dir, name, `"contract_version": "0.3.0"`, `"contract_version": "0.4.0"`)
+		}
+		return dir
 	}
+	// Fixtures of another contract version that are otherwise valid.
+	validOther := otherVersion()
+	// Fixtures of another contract version with a record member that 0.3.0
+	// does not have, as a later version's fixtures may.
+	newMember := otherVersion()
+	alter(t, newMember, "revisions.json", `"revision_id": "rev_aug26_2",`, `"revision_id": "rev_aug26_2", "new_member": null,`)
 	// The last revision's sequence, 2^53, keeps every invariant.
 	tooHigh := copyFixtures(t)
 	alter(t, tooHigh, "revisions.json", `"sequence": 37,`, `"sequence": 9007199254740992,`)
@@ -99,7 +109,8 @@ func TestRunRefusesToStart(t *testing.T) {
 		{"an invalid variable", map[string]string{"TEST_CONTROL": "yes"}, []string{"TEST_CONTROL"}},
 		{"fixtures that break an invariant", map[string]string{"FIXTURES_DIR": broken}, []string{"credentials.json", "cred_research", "invariant 2"}},
 		{"a directory without fixtures", map[string]string{"FIXTURES_DIR": t.TempDir()}, []string{"datasets.json"}},
-		{"fixtures of another contract version", map[string]string{"FIXTURES_DIR": otherVersion}, []string{"contract version 0.4.0", "implements 0.3.0"}},
+		{"fixtures of another contract version", map[string]string{"FIXTURES_DIR": validOther}, []string{"contract version 0.4.0", "implements 0.3.0"}},
+		{"fixtures of another contract version with a new member", map[string]string{"FIXTURES_DIR": newMember}, []string{"contract version 0.4.0", "implements 0.3.0"}},
 		{"a sequence of 2^53", map[string]string{"FIXTURES_DIR": tooHigh}, []string{"revisions.json", "rev_aug26_2", "spec/api.md", "sequence 9007199254740992"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

@@ -265,3 +265,93 @@ func TestLoadNamesFileRecordAndRule(t *testing.T) {
 		t.Fatalf("Load error:\n%v\nwant:\n%s", err, want)
 	}
 }
+
+// TestReadContractVersion checks that the contract version is read without
+// the records, so that fixtures of another version are recognized even when
+// this version cannot decode them.
+func TestReadContractVersion(t *testing.T) {
+	if v, err := ReadContractVersion(financialdataapi.Fixtures()); err != nil || v != "0.3.0" {
+		t.Fatalf("embedded fixtures: %q, %v", v, err)
+	}
+
+	// otherVersion returns the fixtures with contract version 0.4.0 in every
+	// file and a member 0.3.0 does not have in a file and in a record.
+	otherVersion := func(t *testing.T) fstest.MapFS {
+		fsys := embeddedFS(t)
+		for _, file := range []string{DatasetsFile, SeriesFile, RevisionsFile, CalendarFile, CredentialsFile} {
+			replace(t, fsys, file, `"contract_version": "0.3.0"`, `"contract_version": "0.4.0"`)
+		}
+		replace(t, fsys, DatasetsFile, `"contract_version"`, `"new_member": 1, "contract_version"`)
+		replace(t, fsys, RevisionsFile, `"revision_id": "rev_jan24_1",`, `"revision_id": "rev_jan24_1", "new_member": null,`)
+		return fsys
+	}
+	fsys := otherVersion(t)
+	if v, err := ReadContractVersion(fsys); err != nil || v != "0.4.0" {
+		t.Errorf("fixtures of 0.4.0: %q, %v", v, err)
+	}
+	if _, err := Load(fsys); err == nil || !strings.Contains(err.Error(), `unknown member "new_member"`) {
+		t.Errorf("Load of fixtures of 0.4.0: %v", err)
+	}
+
+	tests := []struct {
+		name  string
+		alter func(t *testing.T, fsys fstest.MapFS)
+		want  string
+	}{
+		{
+			name: "versions disagree in fixtures that do not decode",
+			alter: func(t *testing.T, fsys fstest.MapFS) {
+				replace(t, fsys, DatasetsFile, `"contract_version": "0.4.0"`, `"contract_version": "0.3.0"`)
+			},
+			want: `series.json: contract_version "0.4.0" differs from "0.3.0" in datasets.json`,
+		},
+		{
+			name:  "missing file",
+			alter: func(t *testing.T, fsys fstest.MapFS) { delete(fsys, CredentialsFile) },
+			want:  "open credentials.json",
+		},
+		{
+			name:  "null file",
+			alter: func(t *testing.T, fsys fstest.MapFS) { fsys[SeriesFile].Data = []byte("null") },
+			want:  "series.json: null, not an object",
+		},
+		{
+			name: "missing contract_version",
+			alter: func(t *testing.T, fsys fstest.MapFS) {
+				replace(t, fsys, SeriesFile, `"contract_version"`, `"version"`)
+			},
+			want: `series.json: missing member "contract_version"`,
+		},
+		{
+			name: "null contract_version",
+			alter: func(t *testing.T, fsys fstest.MapFS) {
+				replace(t, fsys, SeriesFile, `"contract_version": "0.4.0"`, `"contract_version": null`)
+			},
+			want: `series.json: member "contract_version" is null`,
+		},
+		{
+			name: "contract_version not a string",
+			alter: func(t *testing.T, fsys fstest.MapFS) {
+				replace(t, fsys, SeriesFile, `"contract_version": "0.4.0"`, `"contract_version": 4`)
+			},
+			want: `series.json: contract_version: json: cannot unmarshal number`,
+		},
+		{
+			name: "repeated contract_version",
+			alter: func(t *testing.T, fsys fstest.MapFS) {
+				replace(t, fsys, SeriesFile, `"contract_version"`, `"contract_version": "0.4.0", "contract_version"`)
+			},
+			want: `series.json: repeated member "contract_version"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fsys := otherVersion(t)
+			tt.alter(t, fsys)
+			v, err := ReadContractVersion(fsys)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("ReadContractVersion: %q, %v; want an error containing %q", v, err, tt.want)
+			}
+		})
+	}
+}
