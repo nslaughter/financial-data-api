@@ -39,23 +39,30 @@ var (
 	decimalPattern   = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?$`)
 )
 
-// parseDate parses a date, reporting whether s is a valid calendar date in
+// The layouts of the data contract's dates and timestamps, which the API's
+// requests and responses share.
+const (
+	DateLayout      = "2006-01-02"
+	TimestampLayout = "2006-01-02T15:04:05Z"
+)
+
+// ParseDate parses a date, reporting whether s is a valid calendar date in
 // the form YYYY-MM-DD.
-func parseDate(s string) (time.Time, bool) {
+func ParseDate(s string) (time.Time, bool) {
 	if !datePattern.MatchString(s) {
 		return time.Time{}, false
 	}
-	t, err := time.Parse("2006-01-02", s)
+	t, err := time.Parse(DateLayout, s)
 	return t, err == nil
 }
 
-// parseTimestamp parses a timestamp, reporting whether s is a valid UTC
-// instant in the form YYYY-MM-DDTHH:MM:SSZ.
-func parseTimestamp(s string) (time.Time, bool) {
+// ParseTimestamp parses a timestamp, reporting whether s is a valid UTC
+// instant in the form YYYY-MM-DDTHH:MM:SSZ, with seconds from 00 to 59.
+func ParseTimestamp(s string) (time.Time, bool) {
 	if !timestampPattern.MatchString(s) {
 		return time.Time{}, false
 	}
-	t, err := time.Parse("2006-01-02T15:04:05Z", s)
+	t, err := time.Parse(TimestampLayout, s)
 	return t, err == nil
 }
 
@@ -357,14 +364,14 @@ func (c *checker) monthlyPeriods() {
 		if !ok || s.Frequency != "monthly" {
 			return
 		}
-		startDate, ok := parseDate(start)
+		startDate, ok := ParseDate(start)
 		if !ok {
 			return
 		}
 		if startDate.Day() != 1 {
 			report("period_start %s is not the first day of a month", start)
 		}
-		endDate, ok := parseDate(end)
+		endDate, ok := ParseDate(end)
 		if !ok {
 			return
 		}
@@ -425,7 +432,7 @@ func (c *checker) availabilityOrder() {
 		var items []timed
 		for _, i := range revs {
 			r := c.f.Revisions[i]
-			if at, ok := parseTimestamp(r.AvailableAt); ok {
+			if at, ok := ParseTimestamp(r.AvailableAt); ok {
 				items = append(items, timed{i: i, key: r.Sequence, at: at})
 			}
 		}
@@ -441,9 +448,9 @@ func (c *checker) availabilityOrder() {
 // available_at.
 func (c *checker) timeOrder() {
 	for i, r := range c.f.Revisions {
-		published, okP := parseTimestamp(r.PublishedAt)
-		received, okR := parseTimestamp(r.ReceivedAt)
-		available, okA := parseTimestamp(r.AvailableAt)
+		published, okP := ParseTimestamp(r.PublishedAt)
+		received, okR := ParseTimestamp(r.ReceivedAt)
+		available, okA := ParseTimestamp(r.AvailableAt)
 		if okP && okR && published.After(received) {
 			c.addRevision(8, i, "published_at %s is after received_at %s", r.PublishedAt, r.ReceivedAt)
 		}
@@ -566,8 +573,8 @@ func (c *checker) providerCorrections() {
 				c.addRevision(12, i, "corrects the %s revisions[%d]", Withdrawal, j)
 			}
 			same := func(name, a, b string) {
-				ta, okA := parseTimestamp(a)
-				tb, okB := parseTimestamp(b)
+				ta, okA := ParseTimestamp(a)
+				tb, okB := ParseTimestamp(b)
 				if okA && okB && !ta.Equal(tb) {
 					c.addRevision(12, i, "%s %s differs from %s %s of the corrected revisions[%d]", name, a, name, b, j)
 				}
@@ -588,7 +595,7 @@ func (c *checker) receiptOrder() {
 			if r.ChangeType == ProviderCorrection {
 				continue
 			}
-			if at, ok := parseTimestamp(r.ReceivedAt); ok {
+			if at, ok := ParseTimestamp(r.ReceivedAt); ok {
 				items = append(items, timed{i: i, key: r.RevisionNumber, at: at})
 			}
 		}
@@ -605,12 +612,12 @@ func (c *checker) receiptOrder() {
 func (c *checker) formats() {
 	check := func(dates, timestamps [][2]string, report func(format string, args ...any)) {
 		for _, d := range dates {
-			if _, ok := parseDate(d[1]); !ok {
+			if _, ok := ParseDate(d[1]); !ok {
 				report("%s %q is not a valid YYYY-MM-DD date", d[0], d[1])
 			}
 		}
 		for _, ts := range timestamps {
-			if _, ok := parseTimestamp(ts[1]); !ok {
+			if _, ok := ParseTimestamp(ts[1]); !ok {
 				report("%s %q is not a valid YYYY-MM-DDTHH:MM:SSZ timestamp", ts[0], ts[1])
 			}
 		}

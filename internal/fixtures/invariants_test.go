@@ -408,7 +408,7 @@ func TestOutOfOrderComparesWithEveryLowerKey(t *testing.T) {
 	// Keys 1, 1, 2: the second item with key 1 is earlier than the first,
 	// which is allowed, but the item with key 2 is earlier than the first.
 	at := func(s string) timed {
-		ts, ok := parseTimestamp(s)
+		ts, ok := ParseTimestamp(s)
 		if !ok {
 			t.Fatalf("bad timestamp %q", s)
 		}
