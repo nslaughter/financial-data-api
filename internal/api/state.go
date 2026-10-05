@@ -80,11 +80,17 @@ func (s *state) now() time.Time {
 }
 
 // view reads the clock and a copy of the credential whose api_key is key,
-// together, or nil if no credential has that key.
+// together, or nil if no credential has that key. The key is looked up on
+// its own first: an unknown key's credential_id would be the empty string,
+// which a credential may have.
 func (s *state) view(key string) (time.Time, *credential) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	c, ok := s.credentials[s.ids[key]]
+	id, ok := s.ids[key]
+	if !ok {
+		return s.clock, nil
+	}
+	c, ok := s.credentials[id]
 	if !ok {
 		return s.clock, nil
 	}

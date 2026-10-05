@@ -53,6 +53,29 @@ func TestAuthentication(t *testing.T) {
 	}
 }
 
+// The invariants allow a credential_id that is the empty string. An unknown
+// key must still be refused, rather than taken for that credential.
+func TestUnknownKeyWithAnEmptyCredentialID(t *testing.T) {
+	for _, tt := range []struct {
+		credentialID, key, target string
+	}{
+		{"cred_research", researchKey, "/v1/series"},
+		{"cred_test_control", testControlKey, "/test/clock"},
+	} {
+		t.Run(tt.credentialID, func(t *testing.T) {
+			f := loadFixtures(t)
+			for i := range f.Credentials {
+				if f.Credentials[i].CredentialID == tt.credentialID {
+					f.Credentials[i].CredentialID = ""
+				}
+			}
+			s := newServerFor(t, f, true)
+			wantProblem(t, s.do("GET", tt.target, req{auth: "Bearer not-a-demo-key"}), 401, "unauthenticated", nil)
+			wantOK(t, s.do("GET", tt.target, req{key: tt.key}))
+		})
+	}
+}
+
 func TestCatalog(t *testing.T) {
 	s := newServer(t, true)
 	fx := loadFixtures(t)

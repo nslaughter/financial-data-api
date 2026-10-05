@@ -71,7 +71,14 @@ type testServer struct {
 // enabled or not.
 func newServer(t *testing.T, testControl bool) *testServer {
 	t.Helper()
-	s, err := New(Config{Fixtures: loadFixtures(t), ClockStart: mustTime(t, startClock), TestControl: testControl})
+	return newServerFor(t, loadFixtures(t), testControl)
+}
+
+// newServerFor starts a server for the fixtures f at the default clock
+// start, with test control enabled or not.
+func newServerFor(t *testing.T, f *fixtures.Fixtures, testControl bool) *testServer {
+	t.Helper()
+	s, err := New(Config{Fixtures: f, ClockStart: mustTime(t, startClock), TestControl: testControl})
 	if err != nil {
 		t.Fatal(err)
 	}
