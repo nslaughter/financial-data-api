@@ -566,11 +566,7 @@ func (x *checkRun) requestStep(st *Step, b bodies) *Failure {
 		err := decodeJSON(e.body, &body)
 		b[*st.ID] = parsedBody{value: body, err: err}
 	}
-	exp, err := resolveExpect(st.Expect, b)
-	if err != nil {
-		return x.fail(c, "references", "every reference resolved", err.Error())
-	}
-	if f := x.meets(e, exp); f != nil {
+	if f := x.meets(e, st.Expect, b); f != nil {
 		return f
 	}
 	return x.validate(e)
@@ -661,60 +657,31 @@ func (x *checkRun) build(req *Request, b bodies) (call, error) {
 	return c, nil
 }
 
-// expectation is an Expect with its references resolved.
-type expectation struct {
-	status     int
-	code       *string
-	body       value
-	headers    map[string]string
-	bodySHA256 *string
-	bodyLines  value
-}
-
-func resolveExpect(e *Expect, b bodies) (*expectation, error) {
-	exp := &expectation{status: *e.Status, headers: map[string]string{}}
-	if e.Code != nil {
-		code, err := b.resolveText("code", *e.Code)
+// meets checks a response against a request step's expect, in the order of
+// the expect table: status, code, body, headers, body_sha256, and
+// body_lines. It resolves each member's references just before checking
+// that member, so a reference to the step's own body cannot hide an earlier
+// difference, such as an error status whose body is a problem.
+func (x *checkRun) meets(e *exchange, exp *Expect, b bodies) *Failure {
+	unresolved := func(err error) *Failure {
+		return x.fail(e.call, "references", "every reference resolved", err.Error())
+	}
+	status, err := b.resolve(exp.Status.v)
+	if err != nil {
+		return unresolved(err)
+	}
+	wantStatus, ok := status.(json.Number)
+	if !ok {
+		return unresolved(fmt.Errorf("status %s is %s after resolving references; it must be a number", render(exp.Status.v), jsonType(status)))
+	}
+	if !equalNumbers(wantStatus, json.Number(strconv.Itoa(e.status))) {
+		return x.fail(e.call, "status", wantStatus.String(), e.statusLine())
+	}
+	if exp.Code != nil {
+		code, err := b.resolveText("code", *exp.Code)
 		if err != nil {
-			return nil, err
+			return unresolved(err)
 		}
-		exp.code = &code
-	}
-	for _, name := range sortedKeys(e.Headers) {
-		v, err := b.resolveText("header "+name, e.Headers[name])
-		if err != nil {
-			return nil, err
-		}
-		exp.headers[name] = v
-	}
-	if e.BodySHA256 != nil {
-		sum, err := b.resolveText("body_sha256", *e.BodySHA256)
-		if err != nil {
-			return nil, err
-		}
-		exp.bodySHA256 = &sum
-	}
-	for _, p := range []struct{ from, to *value }{{&e.Body, &exp.body}, {&e.BodyLines, &exp.bodyLines}} {
-		if !p.from.set {
-			continue
-		}
-		v, err := b.resolve(p.from.v)
-		if err != nil {
-			return nil, err
-		}
-		*p.to = value{set: true, v: v}
-	}
-	return exp, nil
-}
-
-// meets checks a response against a request step's expectation, in the
-// order of the expect table: status, code, body, headers, body_sha256, and
-// body_lines.
-func (x *checkRun) meets(e *exchange, exp *expectation) *Failure {
-	if e.status != exp.status {
-		return x.fail(e.call, "status", strconv.Itoa(exp.status), e.statusLine())
-	}
-	if exp.code != nil {
 		if mt := mediaType(e.header.Get("Content-Type")); mt != "application/problem+json" {
 			return x.fail(e.call, "header Content-Type", "application/problem+json", render(e.header.Get("Content-Type")))
 		}
@@ -722,22 +689,29 @@ func (x *checkRun) meets(e *exchange, exp *expectation) *Failure {
 		if err := decodeJSON(e.body, &body); err != nil {
 			return x.fail(e.call, "body", "a problem", "not JSON: "+shorten(string(e.body)))
 		}
-		problem := map[string]any{"code": *exp.code, "status": json.Number(strconv.Itoa(e.status))}
+		problem := map[string]any{"code": code, "status": json.Number(strconv.Itoa(e.status))}
 		if d := match("body", problem, body); d != nil {
 			return x.differs(e.call, d)
 		}
 	}
-	if exp.body.set {
+	if exp.Body.set {
+		want, err := b.resolve(exp.Body.v)
+		if err != nil {
+			return unresolved(err)
+		}
 		var body any
 		if err := decodeJSON(e.body, &body); err != nil {
-			return x.fail(e.call, "body", render(exp.body.v), "not JSON: "+shorten(string(e.body)))
+			return x.fail(e.call, "body", render(want), "not JSON: "+shorten(string(e.body)))
 		}
-		if d := match("body", exp.body.v, body); d != nil {
+		if d := match("body", want, body); d != nil {
 			return x.differs(e.call, d)
 		}
 	}
-	for _, name := range sortedKeys(exp.headers) {
-		want := exp.headers[name]
+	for _, name := range sortedKeys(exp.Headers) {
+		want, err := b.resolveText("header "+name, exp.Headers[name])
+		if err != nil {
+			return unresolved(err)
+		}
 		values := e.header.Values(name)
 		if len(values) == 0 {
 			return x.fail(e.call, "header "+name, render(want), "no header")
@@ -751,18 +725,29 @@ func (x *checkRun) meets(e *exchange, exp *expectation) *Failure {
 			return x.fail(e.call, "header "+name, render(want), render(got))
 		}
 	}
-	if exp.bodySHA256 != nil {
+	if exp.BodySHA256 != nil {
+		want, err := b.resolveText("body_sha256", *exp.BodySHA256)
+		if err != nil {
+			return unresolved(err)
+		}
 		sum := sha256.Sum256(e.body)
-		if got := hex.EncodeToString(sum[:]); got != *exp.bodySHA256 {
-			return x.fail(e.call, "body_sha256", *exp.bodySHA256, got)
+		if got := hex.EncodeToString(sum[:]); got != want {
+			return x.fail(e.call, "body_sha256", want, got)
 		}
 	}
-	if exp.bodyLines.set {
+	if exp.BodyLines.set {
+		want, err := b.resolve(exp.BodyLines.v)
+		if err != nil {
+			return unresolved(err)
+		}
+		if _, ok := want.([]any); !ok {
+			return unresolved(fmt.Errorf("body_lines %s is %s after resolving references; it must be an array", render(exp.BodyLines.v), jsonType(want)))
+		}
 		lines, err := ndjson(e.body)
 		if err != nil {
 			return x.fail(e.call, "body_lines", "lines of JSON, each ending with \\n", err.Error())
 		}
-		if d := match("body_lines", exp.bodyLines.v, lines); d != nil {
+		if d := match("body_lines", want, lines); d != nil {
 			return x.differs(e.call, d)
 		}
 	}

@@ -138,9 +138,11 @@ type Request struct {
 }
 
 // Expect is what a request step's response must meet. Its strings may hold
-// references, which are resolved after the response arrives.
+// references, which are resolved after the response arrives. A string that
+// is exactly one reference may stand for a value of any type, so Status and
+// BodyLines may be such strings as well as an integer and an array.
 type Expect struct {
-	Status     *int              `json:"status"`
+	Status     value             `json:"status"`
 	Code       *string           `json:"code"`
 	Body       value             `json:"body"`
 	Headers    map[string]string `json:"headers"`
@@ -341,11 +343,12 @@ func (s *Step) check(ids map[string]bool) error {
 		}
 		ids[*s.ID] = true
 	}
-	if err := s.Expect.check(); err != nil {
+	// References in expect may also name the step itself. They are checked
+	// first, so a malformed one in status or body_lines is reported as such.
+	if err := checkReferences(s.Expect.strings(), ids); err != nil {
 		return fmt.Errorf("expect: %w", err)
 	}
-	// References in expect may also name the step itself.
-	if err := checkReferences(s.Expect.strings(), ids); err != nil {
+	if err := s.Expect.check(); err != nil {
 		return fmt.Errorf("expect: %w", err)
 	}
 	return nil
@@ -382,12 +385,16 @@ func (r *Request) check() error {
 }
 
 func (e *Expect) check() error {
-	if e.Status == nil {
+	if !e.Status.set {
 		return errors.New("needs a status")
 	}
+	n, isNumber := e.Status.v.(json.Number)
+	if _, isInt := integer(n); !(isNumber && isInt) && !wholeReference(e.Status.v) {
+		return errors.New("status must be an integer or a string that is exactly one reference")
+	}
 	if e.BodyLines.set {
-		if _, ok := e.BodyLines.v.([]any); !ok {
-			return errors.New("body_lines must be an array")
+		if _, ok := e.BodyLines.v.([]any); !ok && !wholeReference(e.BodyLines.v) {
+			return errors.New("body_lines must be an array or a string that is exactly one reference")
 		}
 	}
 	return nil
@@ -411,7 +418,7 @@ func (r *Request) strings() []string {
 
 // strings returns every string in the expectation that may hold a reference.
 func (e *Expect) strings() []string {
-	var ss []string
+	ss := appendStrings(nil, e.Status.v)
 	if e.Code != nil {
 		ss = append(ss, *e.Code)
 	}

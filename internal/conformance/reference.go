@@ -45,6 +45,23 @@ func findReferences(s string) ([]reference, error) {
 	return refs, nil
 }
 
+// whole reports whether refs, the references in s, are one reference that is
+// all of s. Only such a string resolves to a value that may not be a string.
+func whole(s string, refs []reference) bool {
+	return len(refs) == 1 && refs[0].start == 0 && refs[0].end == len(s)
+}
+
+// wholeReference reports whether v is a string that is exactly one
+// well-formed reference.
+func wholeReference(v any) bool {
+	s, ok := v.(string)
+	if !ok {
+		return false
+	}
+	refs, err := findReferences(s)
+	return err == nil && whole(s, refs)
+}
+
 // bodies holds the parsed JSON body of each request step with an id that has
 // received its response, by id.
 type bodies map[string]parsedBody
@@ -99,7 +116,7 @@ func (b bodies) resolveString(s string) (any, error) {
 	if err != nil || len(refs) == 0 {
 		return s, err
 	}
-	if len(refs) == 1 && refs[0].start == 0 && refs[0].end == len(s) {
+	if whole(s, refs) {
 		return b.lookup(refs[0])
 	}
 	var sb strings.Builder

@@ -682,6 +682,85 @@ func TestReferences(t *testing.T) {
 	}
 }
 
+// TestStatusComesBeforeSelfReferences checks that a step whose expect refers
+// to its own body reports a status that differs, not the reference that a
+// problem body cannot resolve.
+func TestStatusComesBeforeSelfReferences(t *testing.T) {
+	// The fake does not serve exports, so it answers 404 not_found.
+	f := newFake(t)
+	file := parse(t, `{"scenarios": [{"name": "s", "steps": [
+		{"id": "create", "request": {"method": "POST", "path": "/v1/datasets/core-indicators/exports"},
+		 "expect": {"status": 201, "headers": {"Location": "/v1/exports/${create.export_id}"}, "body": {"export_id": "${create.export_id}"}}}
+	]}]}`)
+	fail := mustFail(t, runOne(t, newRunner(t, f, 2), file), 1, "status")
+	if fail.Expected != "201" || !strings.HasPrefix(fail.Actual, `404 {"code":"not_found"`) {
+		t.Errorf("expected %s, actual %s", fail.Expected, fail.Actual)
+	}
+}
+
+// TestWholeValueReferencesInExpect checks that a string in expect that is
+// exactly one reference stands for the referenced value, whatever its type,
+// in members that are not strings.
+func TestWholeValueReferencesInExpect(t *testing.T) {
+	recs := revisionRecords(t)[:2]
+	var file strings.Builder
+	for _, r := range recs {
+		data, _ := json.Marshal(r)
+		file.Write(data)
+		file.WriteString("\n")
+	}
+	f := newFake(t)
+	f.handle("GET /v1/series", func(w http.ResponseWriter, r *http.Request) {
+		writeProblem(w, http.StatusUnauthorized, "unauthenticated", "Unauthenticated", nil)
+	})
+	f.reply("GET /v1/revisions", http.StatusOK, observationPage(recs, nil))
+	f.handle("GET /v1/exports/exp_1/files/revisions.jsonl", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.Header().Set("Content-Length", strconv.Itoa(file.Len()))
+		_, _ = w.Write([]byte(file.String()))
+	})
+	const steps = `
+		{"id": "p", "request": {"path": "/v1/series"}, "expect": {"status": 401}},
+		{"id": "r", "request": {"path": "/v1/revisions", "query": {"series_id": "activity-index"}}, "expect": {"status": 200}},`
+	run := func(step string) Result {
+		return runOne(t, newRunner(t, f, 2), parse(t, `{"scenarios": [{"name": "s", "steps": [`+steps+step+`]}]}`))
+	}
+
+	mustPass(t, run(`{"request": {"path": "/v1/series"}, "expect": {"status": "${p.status}", "code": "${p.code}"}},
+		{"request": {"path": "/v1/exports/exp_1/files/revisions.jsonl"}, "expect": {"status": 200, "body_lines": "${r.data}"}}`))
+
+	for _, tt := range []struct {
+		name, step, at, want string
+	}{
+		{
+			name: "a status that differs",
+			step: `{"request": {"path": "/v1/revisions"}, "expect": {"status": "${p.status}"}}`,
+			at:   "status", want: "401",
+		},
+		{
+			name: "body_lines that is not an array",
+			step: `{"request": {"path": "/v1/exports/exp_1/files/revisions.jsonl"}, "expect": {"status": 200, "body_lines": "${r.data.0.revision_id}"}}`,
+			at:   "references", want: `body_lines "${r.data.0.revision_id}" is a string after resolving references; it must be an array`,
+		},
+		{
+			name: "a status that is not a number",
+			step: `{"request": {"path": "/v1/series"}, "expect": {"status": "${p.code}"}}`,
+			at:   "references", want: `status "${p.code}" is a string after resolving references; it must be a number`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			fail := mustFail(t, run(tt.step), 3, tt.at)
+			got := fail.Actual
+			if tt.at == "status" {
+				got = fail.Expected
+			}
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("expected %s, actual %s; want %s", fail.Expected, fail.Actual, tt.want)
+			}
+		})
+	}
+}
+
 // TestMethodReferences checks that references in a request's method are
 // resolved before the request is sent.
 func TestMethodReferences(t *testing.T) {

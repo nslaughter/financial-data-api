@@ -190,7 +190,19 @@ func TestParseFileIsStrict(t *testing.T) {
 		{"a query parameter that is a number", scenario(`{"request": {"path": "/v1/meta", "query": {"after": 1}}, "expect": {"status": 200}}`), "must be a string, null, or an array of strings"},
 		{"an array parameter holding null", scenario(`{"request": {"path": "/v1/meta", "query": {"after": ["1", null]}}, "expect": {"status": 200}}`), "an array must hold only strings"},
 		{"a credential that is a number", scenario(`{"request": {"path": "/v1/meta", "credential": 1}, "expect": {"status": 200}}`), "credential must be a string or null"},
-		{"body_lines that is not an array", scenario(`{"request": {"path": "/v1/meta"}, "expect": {"status": 200, "body_lines": {}}}`), "body_lines must be an array"},
+		{"body_lines that is not an array", scenario(`{"request": {"path": "/v1/meta"}, "expect": {"status": 200, "body_lines": {}}}`),
+			"body_lines must be an array or a string that is exactly one reference"},
+		{"body_lines that is a longer string", scenario(`{"id": "a", "request": {"path": "/v1/meta"}, "expect": {"status": 200, "body_lines": "[${a.lines}]"}}`),
+			"body_lines must be an array or a string that is exactly one reference"},
+		{"a status that is a string", scenario(`{"request": {"path": "/v1/meta"}, "expect": {"status": "200"}}`),
+			"status must be an integer or a string that is exactly one reference"},
+		{"a status that is not an integer", scenario(`{"request": {"path": "/v1/meta"}, "expect": {"status": 200.5}}`),
+			"status must be an integer or a string that is exactly one reference"},
+		{"a status that is null", scenario(`{"request": {"path": "/v1/meta"}, "expect": {"status": null}}`),
+			"status must be an integer or a string that is exactly one reference"},
+		{"a status referring to a later step", scenario(`{"request": {"path": "/v1/meta"}, "expect": {"status": "${b.status}"}}, {"id": "b", ` + meta[1:]),
+			"${b.status} names no earlier request step"},
+		{"a malformed reference in status", scenario(`{"request": {"path": "/v1/meta"}, "expect": {"status": "${b}"}}`), "malformed reference ${b}"},
 		{"a reference to a later step", scenario(`{"request": {"path": "/v1/exports/${b.export_id}"}, "expect": {"status": 200}}, {"id": "b", ` + meta[1:]),
 			"${b.export_id} names no earlier request step"},
 		{"a method referring to a later step", scenario(`{"request": {"method": "${b.method}", "path": "/v1/meta"}, "expect": {"status": 200}}, {"id": "b", ` + meta[1:]),
@@ -228,6 +240,19 @@ func TestExpectMayReferToItsOwnStep(t *testing.T) {
 	_, err := ParseFile("test", []byte(`{"scenarios": [{"name": "s", "steps": [
 		{"id": "c", "request": {"method": "POST", "path": "/v1/datasets/core-indicators/exports"},
 		 "expect": {"status": 201, "headers": {"Location": "/v1/exports/${c.export_id}"}, "body": {"export_id": "${c.export_id}"}}}
+	]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestExpectMayBeWholeReferences checks that status and body_lines, which
+// are not strings, may be strings that are exactly one reference.
+func TestExpectMayBeWholeReferences(t *testing.T) {
+	_, err := ParseFile("test", []byte(`{"scenarios": [{"name": "s", "steps": [
+		{"id": "a", "request": {"path": "/v1/datasets/core-indicators/changes", "query": {"after": "0"}}, "expect": {"status": 200}},
+		{"id": "b", "request": {"path": "/v1/exports/exp_1/files/revisions.jsonl"}, "expect": {"status": "${a.status}", "body_lines": "${a.data}"}},
+		{"request": {"path": "/v1/meta"}, "expect": {"status": 2.0e2}}
 	]}]}`))
 	if err != nil {
 		t.Fatal(err)
