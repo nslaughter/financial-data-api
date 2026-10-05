@@ -22,7 +22,7 @@ start until the operator records the decision here.
 | Step | Status | Pull request |
 | --- | --- | --- |
 | 1. Load the fixtures and enforce the invariants | Done | [#5](https://github.com/nslaughter/financial-data-api/pull/5) |
-| 2. Implement the data rules | Not started | |
+| 2. Implement the data rules | Done | [#6](https://github.com/nslaughter/financial-data-api/pull/6) |
 | 3. Build the conformance runner | Not started | |
 | 4. Serve the foundation | Not started | |
 | 5. Serve observations with pagination | Not started | |
