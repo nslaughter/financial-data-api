@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"mime"
 	"net/http"
 	"net/url"
@@ -477,7 +478,7 @@ func timing(scheduledAt string, revisions []any) (map[string]any, error) {
 	}
 	var published, available instant
 	var revisionID string
-	var sequence int64
+	var sequence *big.Int
 	for i, v := range revisions {
 		rec, ok := v.(map[string]any)
 		if !ok {
@@ -489,14 +490,15 @@ func timing(scheduledAt string, revisions []any) (map[string]any, error) {
 		seqText, _ := rec["sequence"].(json.Number)
 		pub, err1 := time.Parse(timestampLayout, pubText)
 		avail, err2 := time.Parse(timestampLayout, availText)
-		seq, err3 := strconv.ParseInt(string(seqText), 10, 64)
-		if err := errors.Join(err1, err2, err3); err != nil || id == "" {
-			return nil, fmt.Errorf("revision %d needs sequence, revision_id, published_at, and available_at: %s", i, render(rec))
+		// The sequence is compared by value, however it is written.
+		seq, isInt := integer(seqText)
+		if err := errors.Join(err1, err2); err != nil || !isInt || id == "" {
+			return nil, fmt.Errorf("revision %d needs an integer sequence, revision_id, published_at, and available_at: %s", i, render(rec))
 		}
 		if i == 0 || pub.Before(published.t) {
 			published = instant{pubText, pub}
 		}
-		if i == 0 || avail.Before(available.t) || (avail.Equal(available.t) && seq < sequence) {
+		if i == 0 || avail.Before(available.t) || (avail.Equal(available.t) && seq.Cmp(sequence) < 0) {
 			available = instant{availText, avail}
 			revisionID, sequence = id, seq
 		}
@@ -606,7 +608,12 @@ func (x *checkRun) build(req *Request, b bodies) (call, error) {
 			case string:
 				c.query.Add(k, r)
 			case json.Number:
-				c.query.Add(k, r.String())
+				// A number is sent in decimal, however the body wrote it.
+				text, err := decimal(r)
+				if err != nil {
+					return c, fmt.Errorf("query parameter %s: %w", k, err)
+				}
+				c.query.Add(k, text)
 			default:
 				return c, fmt.Errorf("query parameter %s is %s after resolving references; it must be a string, a number, or null", k, jsonType(r))
 			}

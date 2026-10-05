@@ -340,13 +340,15 @@ func TestTimingChecks(t *testing.T) {
 }
 
 func TestTiming(t *testing.T) {
-	rec := func(seq int, id, published, available string) any {
-		return map[string]any{"sequence": json.Number(strconv.Itoa(seq)), "revision_id": id, "published_at": published, "available_at": available}
+	rec := func(seq, id, published, available string) any {
+		return map[string]any{"sequence": json.Number(seq), "revision_id": id, "published_at": published, "available_at": available}
 	}
+	// Sequences compare by value, however they are written: the tie goes to
+	// 2.5e1, which is 25, not 26.0.
 	got, err := timing("2025-12-03T12:30:00Z", []any{
-		rec(26, "late", "2025-12-03T12:30:00Z", "2025-12-04T12:31:10Z"),
-		rec(25, "tie", "2025-12-03T12:35:00Z", "2025-12-04T12:31:10Z"),
-		rec(27, "later", "2025-12-05T12:30:00Z", "2025-12-06T12:31:10Z"),
+		rec("26.0", "late", "2025-12-03T12:30:00Z", "2025-12-04T12:31:10Z"),
+		rec("2.5e1", "tie", "2025-12-03T12:35:00Z", "2025-12-04T12:31:10Z"),
+		rec("27", "later", "2025-12-05T12:30:00Z", "2025-12-06T12:31:10Z"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -367,6 +369,9 @@ func TestTiming(t *testing.T) {
 	}
 	if _, err := timing("2025-12-03T12:30:00Z", []any{map[string]any{"sequence": json.Number("1")}}); err == nil {
 		t.Error("timing of a revision without times: want an error")
+	}
+	if _, err := timing("2025-12-03T12:30:00Z", []any{rec("25.5", "half", "2025-12-03T12:30:00Z", "2025-12-04T12:31:10Z")}); err == nil {
+		t.Error("timing of a revision whose sequence is not an integer: want an error")
 	}
 }
 
@@ -675,6 +680,25 @@ func TestReferences(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestReferencedNumbersAreSentInDecimal checks that a query parameter that
+// is exactly a reference to a number is sent in decimal, however the body
+// wrote the number.
+func TestReferencedNumbersAreSentInDecimal(t *testing.T) {
+	f := newFake(t)
+	f.reply("GET /v1/datasets/core-indicators", http.StatusOK, dataset(json.Number("3.6e1")))
+	f.reply("GET /v1/datasets/core-indicators/changes", http.StatusOK, map[string]any{"data": []any{}, "next_position": 37, "head_position": 37})
+	file := parse(t, `{"scenarios": [{"name": "s", "steps": [
+		{"id": "d", "request": {"path": "/v1/datasets/core-indicators"}, "expect": {"status": 200, "body": {"head_position": 36}}},
+		{"request": {"path": "/v1/datasets/core-indicators/changes", "query": {"after": "${d.head_position}"}}, "expect": {"status": 200}}
+	]}]}`)
+	mustPass(t, runOne(t, newRunner(t, f, 1), file))
+	checkRequests(t, f,
+		"POST /test/reset",
+		"GET /v1/datasets/core-indicators",
+		"GET /v1/datasets/core-indicators/changes?after=36",
+	)
 }
 
 func TestRepeatedQueryParameters(t *testing.T) {

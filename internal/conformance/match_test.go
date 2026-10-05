@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -80,5 +81,46 @@ func TestRenderShortensLongValues(t *testing.T) {
 	got := render(long)
 	if len(got) > maxRendered+len("…") || got[len(got)-len("…"):] != "…" {
 		t.Fatalf("render returned %d bytes ending %q", len(got), got[len(got)-5:])
+	}
+}
+
+func TestDecimal(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"36", "36"},
+		{"36.0", "36"},
+		{"3.6e1", "36"},
+		{"3.6E+1", "36"},
+		{"3600e-2", "36"},
+		{"0.1e1", "1"},
+		{"1e3", "1000"},
+		{"-0", "0"},
+		{"-0.0e5", "0"},
+		{"1.50", "1.5"},
+		{"15e-1", "1.5"},
+		{"1.5e-3", "0.0015"},
+		{"-2.5E+0", "-2.5"},
+		{"123456789012345678901234567890", "123456789012345678901234567890"},
+	}
+	for _, tt := range tests {
+		got, err := decimal(json.Number(tt.in))
+		if err != nil || got != tt.want {
+			t.Errorf("decimal(%s) = %q, %v; want %q", tt.in, got, err, tt.want)
+		}
+	}
+	if _, err := decimal("1e2000000"); err == nil {
+		t.Error("decimal(1e2000000): want an error")
+	}
+}
+
+func TestInteger(t *testing.T) {
+	for _, in := range []string{"36", "36.0", "3.6e1", "360e-1"} {
+		if n, ok := integer(json.Number(in)); !ok || n.Int64() != 36 {
+			t.Errorf("integer(%s) = %v, %v; want 36", in, n, ok)
+		}
+	}
+	for _, in := range []string{"36.5", "3.65e1", ""} {
+		if n, ok := integer(json.Number(in)); ok {
+			t.Errorf("integer(%q) = %v; want no integer", in, n)
+		}
 	}
 }
