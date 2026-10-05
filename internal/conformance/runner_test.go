@@ -505,6 +505,40 @@ func TestUnknownCredentialFailsTheStep(t *testing.T) {
 	}
 }
 
+// TestCredentialReferences checks that a credential that is exactly one
+// reference is resolved before it is used, so a reference to null sends no
+// Authorization header.
+func TestCredentialReferences(t *testing.T) {
+	f := newFake(t)
+	f.handle("GET /v1/datasets/core-indicators", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Header.Get("Authorization") {
+		case "":
+			writeProblem(w, http.StatusUnauthorized, "unauthenticated", "Unauthenticated", nil)
+		case unentitledAuth:
+			writeJSON(w, http.StatusOK, dataset(nil))
+		default:
+			writeJSON(w, http.StatusOK, dataset(37))
+		}
+	})
+	const steps = `
+		{"id": "d", "request": {"path": "/v1/datasets/core-indicators", "credential": "cred_unentitled"}, "expect": {"status": 200, "body": {"head_position": null}}},
+		{"id": "r", "request": {"path": "/v1/datasets/core-indicators"}, "expect": {"status": 200, "body": {"head_position": 37}}},`
+	run := func(step string) Result {
+		return runOne(t, newRunner(t, f, 1), parse(t, `{"scenarios": [{"name": "s", "steps": [`+steps+step+`]}]}`))
+	}
+
+	mustPass(t, run(`{"request": {"path": "/v1/datasets/core-indicators", "credential": "${d.head_position}"}, "expect": {"status": 401, "code": "unauthenticated"}}`))
+	got := checkRequests(t, f, "POST /test/reset", "GET /v1/datasets/core-indicators", "GET /v1/datasets/core-indicators", "GET /v1/datasets/core-indicators")
+	if got[3].authorization != "" {
+		t.Errorf("Authorization %q, want none", got[3].authorization)
+	}
+
+	fail := mustFail(t, run(`{"request": {"path": "/v1/datasets/core-indicators", "credential": "${r.head_position}"}, "expect": {"status": 200}}`), 3, "references")
+	if want := `credential "${r.head_position}" is a number after resolving references`; !strings.Contains(fail.Actual, want) {
+		t.Errorf("actual %q, want %q", fail.Actual, want)
+	}
+}
+
 // TestExpect checks each member of expect against fixed responses.
 func TestExpect(t *testing.T) {
 	recs := revisionRecords(t)

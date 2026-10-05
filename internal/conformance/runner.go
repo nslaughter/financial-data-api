@@ -639,17 +639,25 @@ func (x *checkRun) build(req *Request, b bodies) (call, error) {
 		c.authorization = &auth
 	case !req.Credential.set:
 		c.authorization = bearer(x.keys[defaultCredential])
-	case req.Credential.v == nil:
 	default:
-		id, err := b.resolveText("credential", req.Credential.v.(string))
+		// The credential is resolved before its type is known, because a
+		// string that is exactly one reference may stand for null, which
+		// sends no Authorization header.
+		cred, err := b.resolve(req.Credential.v)
 		if err != nil {
 			return c, err
 		}
-		key, ok := x.keys[id]
-		if !ok {
-			return c, fmt.Errorf("credential %s is not in fixtures/credentials.json", id)
+		switch id := cred.(type) {
+		case nil:
+		case string:
+			key, ok := x.keys[id]
+			if !ok {
+				return c, fmt.Errorf("credential %s is not in fixtures/credentials.json", id)
+			}
+			c.authorization = bearer(key)
+		default:
+			return c, fmt.Errorf("credential %s is %s after resolving references; it must be a string or null", render(req.Credential.v), jsonType(cred))
 		}
-		c.authorization = bearer(key)
 	}
 	if req.Body.set {
 		body, err := b.resolve(req.Body.v)
