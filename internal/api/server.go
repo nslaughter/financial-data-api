@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nslaughter/financial-data-api/internal/exports"
 	"github.com/nslaughter/financial-data-api/internal/fixtures"
 	"github.com/nslaughter/financial-data-api/internal/history"
 )
@@ -75,7 +76,7 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	st, err := newState(cfg.ClockStart, cfg.Fixtures.Credentials)
+	st, err := newState(cfg.ClockStart, cfg.Fixtures.Credentials, exports.NewStore(h))
 	if err != nil {
 		return nil, err
 	}
@@ -116,8 +117,8 @@ type call struct {
 	// path holds the path parameters by name.
 	path map[string]string
 	// moment holds the clock, read once for the request, the page-token key,
-	// and the authenticated credential, which is nil for an endpoint that
-	// requires none.
+	// the export store, and the authenticated credential, which is nil for
+	// an endpoint that requires none.
 	moment
 }
 
@@ -133,11 +134,14 @@ func (s *Server) routeTable(testControl bool) []route {
 		{template: "/v1/datasets", endpoints: map[string]endpoint{http.MethodGet: customer(s.listDatasets)}},
 		{template: "/v1/datasets/{dataset_id}", endpoints: map[string]endpoint{http.MethodGet: customer(s.getDataset)}},
 		{template: "/v1/datasets/{dataset_id}/changes", endpoints: map[string]endpoint{http.MethodGet: customer(s.readChanges)}},
+		{template: "/v1/datasets/{dataset_id}/exports", endpoints: map[string]endpoint{http.MethodPost: customer(s.createExport)}},
 		{template: "/v1/series", endpoints: map[string]endpoint{http.MethodGet: customer(s.listSeries)}},
 		{template: "/v1/series/{series_id}", endpoints: map[string]endpoint{http.MethodGet: customer(s.getSeries)}},
 		{template: "/v1/observations", endpoints: map[string]endpoint{http.MethodGet: customer(s.queryObservations)}},
 		{template: "/v1/revisions", endpoints: map[string]endpoint{http.MethodGet: customer(s.listRevisions)}},
 		{template: "/v1/release-calendar", endpoints: map[string]endpoint{http.MethodGet: customer(s.releaseCalendar)}},
+		{template: "/v1/exports/{export_id}", endpoints: map[string]endpoint{http.MethodGet: customer(s.getExport)}},
+		{template: "/v1/exports/{export_id}/files/{file_name}", endpoints: map[string]endpoint{http.MethodGet: customer(s.downloadExportFile)}},
 	}
 	if testControl {
 		routes = append(routes,

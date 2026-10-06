@@ -64,7 +64,7 @@ The README describes the project for people; it is not a specification.
 | Format check | `gofmt -l .` |
 | Vet and test | `go vet ./... && go test ./...` |
 | Run the server with test control | `TEST_CONTROL=enabled go run ./cmd/server` |
-| Run the conformance suite | `go run ./cmd/conformance --base-url http://localhost:8080 --stage 2`, with the `--file` flags of the conformance job in `.github/workflows/ci.yml` until step 9 adds exports |
+| Run the conformance suite | `go run ./cmd/conformance --base-url http://localhost:8080 --stage 2` |
 
 ## Doing the next item
 
