@@ -93,14 +93,42 @@ jobs:
       - name: Publish the image
         if: github.event_name == 'push'
         # The SDKs and the monitor pin an image tag, so a published version
-        # is never replaced.
+        # is never replaced. The image is pushed only when the registry
+        # answers 404 for the version's manifest. Any other answer, or none,
+        # stops the release: `docker manifest inspect` fails the same way for
+        # a missing manifest and for a registry error, so it cannot tell them
+        # apart.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          if docker manifest inspect "$IMAGE:$VERSION" > /dev/null 2>&1; then
-            echo "$IMAGE:$VERSION is already published."
+          repository=${IMAGE#ghcr.io/}
+          unknown="Whether $IMAGE:$VERSION is already published is unknown"
+          if ! response=$(curl -fsS --retry 3 --max-time 30 --user "$GITHUB_ACTOR:$GITHUB_TOKEN" \
+              "https://ghcr.io/token?service=ghcr.io&scope=repository:$repository:pull,push"); then
+            echo "$unknown: the registry gave no token."
             exit 1
           fi
+          token=$(jq -r '.token // empty' <<< "$response")
+          if [ -z "$token" ]; then
+            echo "$unknown: the registry gave no token."
+            exit 1
+          fi
+          status=$(curl -sS --retry 3 --max-time 30 --head --output /dev/null --write-out '%{http_code}' \
+              --header "Authorization: Bearer $token" \
+              --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+              "https://ghcr.io/v2/$repository/manifests/$VERSION") || true
+          case "$status" in
+            404)
+              ;;
+            200)
+              echo "$IMAGE:$VERSION is already published."
+              exit 1
+              ;;
+            *)
+              echo "$unknown: the registry answered \"$status\"."
+              exit 1
+              ;;
+          esac
+          echo "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           docker tag image-under-test "$IMAGE:$VERSION"
           docker push "$IMAGE:$VERSION"
