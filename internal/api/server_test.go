@@ -34,6 +34,8 @@ func TestRouting(t *testing.T) {
 		{name: "a stage 2 path", method: "GET", target: "/v1/revisions?series_id=activity-index", r: req{key: researchKey}, status: 404, code: "not_found"},
 		{name: "an unsupported method", method: "POST", target: "/v1/series", r: req{key: researchKey}, status: 405, code: "method_not_allowed", allow: "GET"},
 		{name: "DELETE", method: "DELETE", target: "/v1/datasets/core-indicators", r: req{key: researchKey}, status: 405, code: "method_not_allowed", allow: "GET"},
+		{name: "the change stream", method: "PUT", target: "/v1/datasets/core-indicators/changes?after=0", r: req{key: researchKey}, status: 405, code: "method_not_allowed", allow: "GET"},
+		{name: "the change stream with an empty dataset", method: "GET", target: "/v1/datasets//changes?after=0", r: req{key: researchKey}, status: 404, code: "not_found"},
 		{name: "HEAD", method: "HEAD", target: "/v1/meta", status: 405, allow: "GET"},
 		{name: "a test path with two methods", method: "POST", target: "/test/clock", r: req{key: testControlKey}, status: 405, code: "method_not_allowed", allow: "GET, PUT"},
 		{name: "a test path with a parameter", method: "GET", target: "/test/credentials/cred_research", r: req{key: testControlKey}, status: 405, code: "method_not_allowed", allow: "PUT"},

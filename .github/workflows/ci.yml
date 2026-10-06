@@ -57,18 +57,8 @@ jobs:
           cat server.log
           exit 1
       - name: Run the conformance suite
-        # The files that the steps of docs/implementation-plan.md have
-        # turned on so far.
-        run: |
-          bin/conformance --base-url http://localhost:8080 --stage 1 \
-            --file august-2026-at-cutoffs \
-            --file full-history \
-            --file missing-value \
-            --file withdrawal-and-rerelease \
-            --file out-of-order-arrival \
-            --file provider-correction \
-            --file late-source-release \
-            --file pagination
+        # Every file the stage table requires of a stage 1 server.
+        run: bin/conformance --base-url http://localhost:8080 --stage 1
       - name: Show the server log
         if: failure()
         run: cat server.log
