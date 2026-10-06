@@ -35,7 +35,7 @@ jobs:
         run: go test ./...
 
   conformance:
-    name: Conformance (stage 1)
+    name: Conformance (stage 2, without exports)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -57,8 +57,21 @@ jobs:
           cat server.log
           exit 1
       - name: Run the conformance suite
-        # Every file the stage table requires of a stage 1 server.
-        run: bin/conformance --base-url http://localhost:8080 --stage 1
+        # At stage 2, every stage 1 file and the stage 2 files the server
+        # serves so far. The server answers published_as_of and
+        # GET /v1/revisions, so the stage 1 scenario in request-errors that
+        # expects them refused no longer applies. Exports, and with them
+        # export-handoff and exports, arrive in step 9 of the implementation
+        # plan, which runs every file with --stage 2 alone.
+        run: >-
+          bin/conformance --base-url http://localhost:8080 --stage 2
+          --file august-2026-at-cutoffs --file full-history --file missing-value
+          --file withdrawal-and-rerelease --file out-of-order-arrival
+          --file provider-correction --file late-source-release
+          --file change-stream --file simulated-clock --file pagination
+          --file access-control --file request-errors
+          --file published-as-of --file revision-history --file release-calendar
+          --file release-timing
       - name: Show the server log
         if: failure()
         run: cat server.log

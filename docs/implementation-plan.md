@@ -28,7 +28,7 @@ start until the operator records the decision here.
 | 5. Serve observations with pagination | Done | [#10](https://github.com/nslaughter/financial-data-api/pull/10) |
 | 6. Serve the change stream | Done | [#11](https://github.com/nslaughter/financial-data-api/pull/11) |
 | 7. Publish the demo API image | Done | [#14](https://github.com/nslaughter/financial-data-api/pull/14) |
-| 8. Add `published_as_of`, the revision history, and the release calendar | Not started | |
+| 8. Add `published_as_of`, the revision history, and the release calendar | Done | [#15](https://github.com/nslaughter/financial-data-api/pull/15) |
 | 9. Add exports | Not started | |
 | 10. Publish the full API image | Not started | |
 
@@ -251,6 +251,12 @@ Stage 1 is complete here. The SDKs can pin the image.
   every stage 1 file: the server now serves `published_as_of` and
   `GET /v1/revisions`, so the stage 1 scenario in `request-errors` no longer
   applies.
+
+The operator confirmed on October 6, 2026, a correction made in this step's
+review: the Commands table in [`AGENTS.md`](../AGENTS.md) runs the
+conformance suite with `--stage 2` and the `--file` flags of the CI job until
+step 9 adds exports. The `--stage 1` command it gave before fails against a
+server that serves `published_as_of` and `GET /v1/revisions`.
 
 ### 9. Add exports
 

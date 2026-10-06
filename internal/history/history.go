@@ -1,9 +1,10 @@
 // Package history implements the data contract's rules over the fixture
 // revisions: positions in a dataset's change stream, selection at the
 // available_as_of and published_as_of cutoffs, the revision history,
-// change-stream reads with retention, and the canonical bytes of an export
-// file. It knows nothing of HTTP: the API parses requests, reads the clock,
-// and passes the clock or a snapshot position in.
+// change-stream reads with retention, the canonical bytes of an export file,
+// and the entries of the release calendar in a period range. It knows nothing
+// of HTTP: the API parses requests, reads the clock, and passes the clock or
+// a snapshot position in.
 //
 // A revision is visible when its available_at is at or before the clock.
 // Because available_at never decreases as sequence increases (invariant 7),
@@ -41,11 +42,12 @@ const (
 	timestampLayout = "2006-01-02T15:04:05Z"
 )
 
-// History holds every dataset's revisions. It does not change after New, so
-// it is safe for concurrent use.
+// History holds every dataset's revisions and every series' release
+// calendar. It does not change after New, so it is safe for concurrent use.
 type History struct {
 	datasets map[string][]revision // each dataset's revisions, in sequence order
 	series   map[string]string     // the dataset of each series
+	releases map[string][]release  // each series' calendar, by period_start
 }
 
 // revision is a fixture revision with its dates and timestamps parsed.
@@ -55,12 +57,19 @@ type revision struct {
 	publishedAt, availableAt time.Time
 }
 
+// release is an entry of the release calendar with its period parsed.
+type release struct {
+	fixtures.Release
+	periodStart, periodEnd time.Time
+}
+
 // New builds the history of fixtures that pass the invariants, as
 // fixtures.Load returns them.
 func New(f *fixtures.Fixtures) (*History, error) {
 	h := &History{
 		datasets: make(map[string][]revision),
 		series:   make(map[string]string, len(f.Series)),
+		releases: make(map[string][]release),
 	}
 	for _, s := range f.Series {
 		h.series[s.SeriesID] = s.DatasetID
@@ -88,6 +97,20 @@ func New(f *fixtures.Fixtures) (*History, error) {
 			*tm.dst = t
 		}
 		h.datasets[dataset] = append(h.datasets[dataset], rev)
+	}
+	for _, e := range f.Releases {
+		rel := release{Release: e}
+		var err error
+		if rel.periodStart, err = time.Parse(dateLayout, e.PeriodStart); err != nil {
+			return nil, fmt.Errorf("release of %s for %s: %w", e.SeriesID, e.PeriodStart, err)
+		}
+		if rel.periodEnd, err = time.Parse(dateLayout, e.PeriodEnd); err != nil {
+			return nil, fmt.Errorf("release of %s for %s: %w", e.SeriesID, e.PeriodStart, err)
+		}
+		h.releases[e.SeriesID] = append(h.releases[e.SeriesID], rel)
+	}
+	for _, rels := range h.releases {
+		sort.SliceStable(rels, func(i, j int) bool { return rels[i].periodStart.Before(rels[j].periodStart) })
 	}
 	return h, nil
 }
@@ -165,8 +188,16 @@ type Query struct {
 
 // inRange reports whether r's period lies within the query's range.
 func (q *Query) inRange(r *revision) bool {
-	return (q.PeriodStart == nil || !r.periodStart.Before(*q.PeriodStart)) &&
-		(q.PeriodEnd == nil || !r.periodEnd.After(*q.PeriodEnd))
+	return withinRange(r.periodStart, r.periodEnd, q.PeriodStart, q.PeriodEnd)
+}
+
+// withinRange reports whether the period from periodStart up to periodEnd
+// lies entirely within the range from start up to end, either of which may
+// be nil for no bound: periodStart is at or after start, and periodEnd is at
+// or before end.
+func withinRange(periodStart, periodEnd time.Time, start, end *time.Time) bool {
+	return (start == nil || !periodStart.Before(*start)) &&
+		(end == nil || !periodEnd.After(*end))
 }
 
 // considered returns the revisions the query considers: those of its series
@@ -288,6 +319,21 @@ func (h *History) Snapshot(datasetID string, position int64) []fixtures.Revision
 	out := make([]fixtures.Revision, len(revs))
 	for i := range revs {
 		out[i] = revs[i].Revision
+	}
+	return out
+}
+
+// Releases returns the release calendar's entries for the series whose
+// periods lie entirely within the range from start up to end, either of which
+// may be nil for no bound, as for a query. The calendar is a published plan,
+// so it does not depend on the clock. Results are ordered by period_start,
+// ascending, and the slice is never nil.
+func (h *History) Releases(seriesID string, start, end *time.Time) []fixtures.Release {
+	out := []fixtures.Release{}
+	for _, r := range h.releases[seriesID] {
+		if withinRange(r.periodStart, r.periodEnd, start, end) {
+			out = append(out, r.Release)
+		}
 	}
 	return out
 }

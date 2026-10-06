@@ -136,6 +136,8 @@ func (s *Server) routeTable(testControl bool) []route {
 		{template: "/v1/series", endpoints: map[string]endpoint{http.MethodGet: customer(s.listSeries)}},
 		{template: "/v1/series/{series_id}", endpoints: map[string]endpoint{http.MethodGet: customer(s.getSeries)}},
 		{template: "/v1/observations", endpoints: map[string]endpoint{http.MethodGet: customer(s.queryObservations)}},
+		{template: "/v1/revisions", endpoints: map[string]endpoint{http.MethodGet: customer(s.listRevisions)}},
+		{template: "/v1/release-calendar", endpoints: map[string]endpoint{http.MethodGet: customer(s.releaseCalendar)}},
 	}
 	if testControl {
 		routes = append(routes,

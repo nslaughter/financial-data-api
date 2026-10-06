@@ -3,6 +3,7 @@ package history
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -319,4 +320,76 @@ func unique(s []string) []string {
 		}
 	}
 	return out
+}
+
+func TestReleases(t *testing.T) {
+	f, h := load(t)
+	all := h.Releases("activity-index", nil, nil)
+	if len(all) != len(f.Releases) {
+		t.Fatalf("%d releases, want every one of the %d", len(all), len(f.Releases))
+	}
+	for i := 1; i < len(all); i++ {
+		if all[i-1].PeriodStart >= all[i].PeriodStart {
+			t.Errorf("%s comes before %s", all[i-1].PeriodStart, all[i].PeriodStart)
+		}
+	}
+	tests := []struct {
+		start, end string // "" for no bound
+		want       []string
+	}{
+		{"2026-07-15", "2026-09-01", []string{"2026-08-01"}},
+		{"2026-07-01", "2026-08-15", []string{"2026-07-01"}},
+		{"2026-07-15", "2026-08-15", []string{}},
+		{"2026-07-01", "2026-09-01", []string{"2026-07-01", "2026-08-01"}},
+		{"2026-08-01", "", []string{"2026-08-01"}},
+		{"", "2024-02-01", []string{"2024-01-01"}},
+	}
+	for _, tt := range tests {
+		var start, end *time.Time
+		if tt.start != "" {
+			d := date(t, tt.start)
+			start = &d
+		}
+		if tt.end != "" {
+			d := date(t, tt.end)
+			end = &d
+		}
+		var got []string
+		for _, r := range h.Releases("activity-index", start, end) {
+			got = append(got, r.PeriodStart)
+		}
+		if got == nil {
+			got = []string{}
+		}
+		if !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("from %q to %q: periods %v, want %v", tt.start, tt.end, got, tt.want)
+		}
+	}
+	if got := h.Releases("no-such-series", nil, nil); got == nil || len(got) != 0 {
+		t.Errorf("an unknown series: %v, want an empty slice", got)
+	}
+}
+
+// The fixture lists the calendar in period_start order, but the data
+// contract does not require that order of the file, so Releases must not
+// depend on it.
+func TestReleasesAreOrderedWhateverTheFileOrder(t *testing.T) {
+	f, _ := load(t)
+	slices.Reverse(f.Releases)
+	if vs := fixtures.Check(f); len(vs) > 0 {
+		t.Fatalf("the reversed fixtures break invariants: %v", vs)
+	}
+	h, err := New(f)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	got := h.Releases("activity-index", nil, nil)
+	if len(got) != len(f.Releases) {
+		t.Fatalf("%d releases, want every one of the %d", len(got), len(f.Releases))
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i-1].PeriodStart >= got[i].PeriodStart {
+			t.Errorf("%s comes before %s", got[i-1].PeriodStart, got[i].PeriodStart)
+		}
+	}
 }
