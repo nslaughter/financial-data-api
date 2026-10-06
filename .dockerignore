@@ -1,0 +1,12 @@
+# The image is built from the module's source and the contract files it
+# embeds; nothing else enters the build context.
+*
+!go.mod
+!go.sum
+!*.go
+!cmd
+!internal
+!fixtures
+!expected
+!spec
+!LICENSE

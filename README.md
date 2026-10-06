@@ -9,17 +9,18 @@ fintech, data pipelines, observability, and infrastructure, informed by a
 background in investment research. I help teams turn datasets into APIs whose
 meaning and delivery behavior customers can depend on.
 
-**Status:** Specified, not yet implemented. This repository contains the
+**Status:** The demo API, stage 1, is implemented in Go and passes the stage 1
+conformance suite. Release `v0.1.0` publishes it as the container image
+`ghcr.io/nslaughter/financial-data-api:0.1.0`; see
+[Run the demo API](#run-the-demo-api). This repository also contains the
 [data contract](spec/data-contract.md) (version 0.3.0, tagged
 `contract-v0.3.0`) with its
 fixtures and expected results, the [API specification](spec/api.md) and its
 [OpenAPI form](spec/openapi.yaml), the [conformance format](spec/conformance.md),
 and the [implementation plan](docs/implementation-plan.md).
-The API, deployment, and runnable demonstrations are planned; nothing described
-here has been implemented or tested yet. The API will be written in Go, and the
-demo API that the SDKs use from the first stage will ship from here as a
-container image. The dataset is synthetic, and this is a demonstration project,
-not client work.
+The full API of stage 2, with exports, the revision history, and the release
+calendar, is planned, as are the runnable demonstrations. The dataset is
+synthetic, and this is a demonstration project, not client work.
 
 ## What this project demonstrates
 
@@ -160,12 +161,45 @@ Several delivery rules matter as much as the schema:
 
 - An API specification and data dictionary. These are written: see
   [`spec/`](spec).
-- A local startup command and seeded fixtures.
+- A local startup command and seeded fixtures. These are here for stage 1:
+  see [Run the demo API](#run-the-demo-api).
 - Query, export, and update examples.
-- Contract and authorization checks in CI.
+- Contract and authorization checks in CI. The stage 1 conformance suite runs
+  on every pull request, against the server and its container image.
 - A tagged release that names the compatible SDK version.
 - Documented retention and recovery policies, and the limits of the historical
   availability claims.
+
+## Run the demo API
+
+The demo API is published as a container image with the fixtures built in.
+This command starts it with the `/test` endpoints enabled, which the
+conformance suite and the SDKs' tests use to set the simulated clock and
+reset state:
+
+```sh
+docker run --rm -p 8080:8080 -e TEST_CONTROL=enabled ghcr.io/nslaughter/financial-data-api:0.1.0
+```
+
+The query from the example above, with a demonstration key from the
+fixtures, returns 102.4:
+
+```sh
+curl -H 'Authorization: Bearer demo-research-key' \
+  'http://localhost:8080/v1/observations?series_id=activity-index&period_start=2026-08-01&period_end=2026-09-01&available_as_of=2026-09-04T00:00:00Z'
+```
+
+From a checkout of this repository, this runs the stage 1 conformance suite
+against it:
+
+```sh
+go run ./cmd/conformance --base-url http://localhost:8080 --stage 1
+```
+
+[Running the server](spec/api.md#running-the-server) lists the environment
+variables the server reads. The image's labels record the contract version
+it implements and its stage. Each release tag `vX.Y.Z` publishes the image
+tagged `X.Y.Z`, after the conformance suite passes against it.
 
 ## A later contract change will test the maintenance work
 

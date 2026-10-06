@@ -1,0 +1,99 @@
+name: Release
+
+# On a pull request, build the image and run the conformance suite against
+# the container. On a version tag, do the same, then publish the image that
+# passed. The repository owner pushes the tag.
+on:
+  pull_request:
+  push:
+    tags: ['v[0-9]*']
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/nslaughter/financial-data-api
+
+jobs:
+  image:
+    name: Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # To publish the image on a version tag.
+      packages: write
+    steps:
+      - name: Check the tag
+        if: github.event_name == 'push'
+        # A release tag is the server's version, vX.Y.Z. The image's tag is
+        # the version without its v.
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "The tag $GITHUB_REF_NAME is not a version of the form vX.Y.Z."
+            exit 1
+          fi
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build the image
+        run: |
+          labels=(--label "org.opencontainers.image.revision=$GITHUB_SHA")
+          if [ -n "${VERSION:-}" ]; then
+            labels+=(--label "org.opencontainers.image.version=$VERSION")
+          fi
+          docker build "${labels[@]}" --tag image-under-test .
+      - name: Build the conformance runner
+        run: go build -o bin/ ./cmd/conformance
+      - name: Start the container
+        run: |
+          docker run --detach --name server --publish 8080:8080 --env TEST_CONTROL=enabled image-under-test
+          for _ in $(seq 1 50); do
+            if curl -fsS http://localhost:8080/v1/meta > /dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.2
+          done
+          echo "The container did not become ready:"
+          docker logs server
+          exit 1
+      - name: Check the labels
+        # The image states the contract version it implements, which must be
+        # the one the server reports, and its stage, at which the suite runs.
+        run: |
+          label() {
+            docker image inspect --format "{{ index .Config.Labels \"com.nathanslaughter.financial-data-api.$1\" }}" image-under-test
+          }
+          labelled=$(label contract-version)
+          served=$(curl -fsS http://localhost:8080/v1/meta | jq -r .contract_version)
+          if [ "$labelled" != "$served" ]; then
+            echo "The image is labelled contract version \"$labelled\", but the server reports \"$served\"."
+            exit 1
+          fi
+          stage=$(label stage)
+          if [[ ! "$stage" =~ ^[12]$ ]]; then
+            echo "The image's stage label is \"$stage\", not 1 or 2."
+            exit 1
+          fi
+          echo "STAGE=$stage" >> "$GITHUB_ENV"
+      - name: Run the conformance suite
+        # Every file the stage table requires of a server at the image's stage.
+        run: bin/conformance --base-url http://localhost:8080 --stage "$STAGE"
+      - name: Show the container log
+        if: failure()
+        run: docker logs server
+      - name: Publish the image
+        if: github.event_name == 'push'
+        # The SDKs and the monitor pin an image tag, so a published version
+        # is never replaced.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          if docker manifest inspect "$IMAGE:$VERSION" > /dev/null 2>&1; then
+            echo "$IMAGE:$VERSION is already published."
+            exit 1
+          fi
+          docker tag image-under-test "$IMAGE:$VERSION"
+          docker push "$IMAGE:$VERSION"
