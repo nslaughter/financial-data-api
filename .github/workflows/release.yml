@@ -1,0 +1,178 @@
+name: Release
+
+# On a pull request that changes the image or this workflow, build the image
+# and run the conformance suite against the container. On a version tag, do
+# the same, then publish the image that passed. The repository owner pushes
+# the tag.
+#
+# Pull requests that change only the server are tested by the CI workflow,
+# not here. The suite here runs at the stage the image's label names, which
+# stays 1 until step 10 of the implementation plan. The servers of steps 8
+# and 9 serve parameters and paths that a stage 1 scenario in request-errors
+# expects to be refused, so that suite would fail on their pull requests.
+#
+# Only the Publish job, which runs on a version tag, can write packages. It
+# runs none of the repository's code: it loads the image the Image job tested
+# and pushes it.
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/release.yml
+  push:
+    tags: ['v[0-9]*']
+
+permissions:
+  contents: read
+
+# Runs for the same ref wait for each other instead of overlapping. If a tag
+# is pushed again while its first run is in progress, the second run's check
+# for a published version then sees the first run's push.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/nslaughter/financial-data-api
+
+jobs:
+  image:
+    name: Image
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - name: Check the tag
+        id: tag
+        if: github.event_name == 'push'
+        # A release tag is the server's version, vX.Y.Z. The image's tag is
+        # the version without its v.
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "The tag $GITHUB_REF_NAME is not a version of the form vX.Y.Z."
+            exit 1
+          fi
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v5
+        with:
+          # No later step uses Git, so the token is not left in .git/config
+          # for the code the job builds and runs.
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build the image
+        run: |
+          labels=(--label "org.opencontainers.image.revision=$GITHUB_SHA")
+          if [ -n "${VERSION:-}" ]; then
+            labels+=(--label "org.opencontainers.image.version=$VERSION")
+          fi
+          docker build "${labels[@]}" --tag image-under-test .
+      - name: Build the conformance runner
+        run: go build -o bin/ ./cmd/conformance
+      - name: Start the container
+        run: |
+          docker run --detach --name server --publish 8080:8080 --env TEST_CONTROL=enabled image-under-test
+          for _ in $(seq 1 50); do
+            if curl -fsS http://localhost:8080/v1/meta > /dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.2
+          done
+          echo "The container did not become ready:"
+          docker logs server
+          exit 1
+      - name: Check the labels
+        # The image states the contract version it implements, which must be
+        # the one the server reports, and its stage, at which the suite runs.
+        run: |
+          label() {
+            docker image inspect --format "{{ index .Config.Labels \"com.nathanslaughter.financial-data-api.$1\" }}" image-under-test
+          }
+          labelled=$(label contract-version)
+          served=$(curl -fsS http://localhost:8080/v1/meta | jq -r .contract_version)
+          if [ "$labelled" != "$served" ]; then
+            echo "The image is labelled contract version \"$labelled\", but the server reports \"$served\"."
+            exit 1
+          fi
+          stage=$(label stage)
+          if [[ ! "$stage" =~ ^[12]$ ]]; then
+            echo "The image's stage label is \"$stage\", not 1 or 2."
+            exit 1
+          fi
+          echo "STAGE=$stage" >> "$GITHUB_ENV"
+      - name: Run the conformance suite
+        # Every file the stage table requires of a server at the image's stage.
+        run: bin/conformance --base-url http://localhost:8080 --stage "$STAGE"
+      - name: Show the container log
+        if: failure()
+        run: docker logs server
+      - name: Save the image
+        if: github.event_name == 'push'
+        run: docker save --output image.tar image-under-test
+      - uses: actions/upload-artifact@v7
+        if: github.event_name == 'push'
+        with:
+          name: image
+          path: image.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish
+    needs: image
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    env:
+      VERSION: ${{ needs.image.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+      - name: Load the image
+        run: docker load --input image.tar
+      - name: Publish the image
+        # The SDKs and the monitor pin an image tag, so a published version
+        # is never replaced. The image is pushed only when the registry
+        # answers 404 for the version's manifest. Any other answer, or none,
+        # stops the release: `docker manifest inspect` fails the same way for
+        # a missing manifest and for a registry error, so it cannot tell them
+        # apart.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          repository=${IMAGE#ghcr.io/}
+          unknown="Whether $IMAGE:$VERSION is already published is unknown"
+          if ! response=$(curl -fsS --retry 3 --max-time 30 --user "$GITHUB_ACTOR:$GITHUB_TOKEN" \
+              "https://ghcr.io/token?service=ghcr.io&scope=repository:$repository:pull,push"); then
+            echo "$unknown: the registry gave no token."
+            exit 1
+          fi
+          token=$(jq -r '.token // empty' <<< "$response")
+          if [ -z "$token" ]; then
+            echo "$unknown: the registry gave no token."
+            exit 1
+          fi
+          status=$(curl -sS --retry 3 --max-time 30 --head --output /dev/null --write-out '%{http_code}' \
+              --header "Authorization: Bearer $token" \
+              --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+              "https://ghcr.io/v2/$repository/manifests/$VERSION") || true
+          case "$status" in
+            404)
+              ;;
+            200)
+              echo "$IMAGE:$VERSION is already published."
+              exit 1
+              ;;
+            *)
+              echo "$unknown: the registry answered \"$status\"."
+              exit 1
+              ;;
+          esac
+          echo "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker tag image-under-test "$IMAGE:$VERSION"
+          docker push "$IMAGE:$VERSION"
