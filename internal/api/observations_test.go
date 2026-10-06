@@ -1,12 +1,16 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/nslaughter/financial-data-api/internal/fixtures"
 )
 
 // observations sends GET /v1/observations with the query and the research
@@ -69,7 +73,6 @@ func TestObservations(t *testing.T) {
 		parameter any
 	}{
 		{"", "missing_parameter", "series_id"},
-		{"series_id=activity-index&published_as_of=2026-09-04T00:00:00Z", "unknown_parameter", "published_as_of"},
 		{"series_id=activity-index&period_start=2026-09-01&period_end=2026-09-01", "invalid_parameter", "period_end"},
 		{"series_id=activity-index&period_start=2026-09-01&period_end=2026-08-01", "invalid_parameter", "period_end"},
 		{"series_id=activity-index&period_start=2026-02-30", "invalid_parameter", "period_start"},
@@ -206,10 +209,13 @@ func TestPageTokens(t *testing.T) {
 		"series_id=activity-index&page_size=20",
 		"series_id=activity-index&page_size=10&period_start=2024-01-01",
 		"series_id=activity-index&page_size=10&available_as_of=2026-10-01T00:00:00Z",
+		"series_id=activity-index&page_size=10&published_as_of=2026-10-01T00:00:00Z",
 		"series_id=no-such-series&page_size=10",
 	} {
 		wantProblem(t, s.observations(withToken(q, token)), 400, "page_token_mismatch", "page_token")
 	}
+	// The revision history takes the same parameters, but not the token.
+	wantProblem(t, s.get("/v1/revisions?"+withToken(query, token)), 400, "page_token_mismatch", "page_token")
 	// Parameters may come in another order.
 	wantOK(t, s.observations("page_size=10&page_token="+url.QueryEscape(token)+"&series_id=activity-index"))
 	s.test("PUT", "/test/credentials/cred_unentitled", `{"datasets": ["core-indicators"]}`)
@@ -276,4 +282,207 @@ func TestConcurrentPaging(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// field returns a member of each record of a page.
+func field(t *testing.T, body map[string]any, name string) []string {
+	t.Helper()
+	data, ok := body["data"].([]any)
+	if !ok {
+		t.Fatalf("data is %T", body["data"])
+	}
+	out := make([]string, len(data))
+	for i, d := range data {
+		out[i] = d.(map[string]any)[name].(string)
+	}
+	return out
+}
+
+func TestPublishedAsOf(t *testing.T) {
+	s := newServer(t, true)
+	const february = "series_id=activity-index&period_start=2026-02-01&period_end=2026-03-01"
+
+	// What the source had published by March 4 has the provider's correction
+	// applied; what the API served then does not.
+	for cutoff, want := range map[string]string{
+		"published_as_of=2026-03-04T00:00:00Z": "[rev_feb26_2]",
+		"available_as_of=2026-03-04T00:00:00Z": "[rev_feb26_1]",
+	} {
+		if got := field(t, wantOK(t, s.observations(february+"&"+cutoff)), "revision_id"); fmt.Sprint(got) != want {
+			t.Errorf("%s: %v, want %s", cutoff, got, want)
+		}
+	}
+
+	// A cutoff may equal the clock, but not pass it, and a query takes at
+	// most one cutoff, which names no parameter.
+	wantOK(t, s.observations("series_id=activity-index&published_as_of=2026-10-01T00:00:00Z"))
+	for _, tt := range []struct {
+		query     string
+		code      string
+		parameter any
+	}{
+		{"published_as_of=2026-10-01T00:00:01Z", "cutoff_in_future", "published_as_of"},
+		{"published_as_of=2026-03-04", "invalid_parameter", "published_as_of"},
+		{"published_as_of=2026-03-04T00:00:00Z&published_as_of=2026-03-05T00:00:00Z", "invalid_parameter", "published_as_of"},
+		{"available_as_of=2026-03-04T00:00:00Z&published_as_of=2026-03-04T00:00:00Z", "conflicting_cutoffs", nil},
+		{"published_as_of=2026-03-04T00:00:00Z&available_as_of=2026-03-04T00:00:00Z", "conflicting_cutoffs", nil},
+	} {
+		wantProblem(t, s.observations(february+"&"+tt.query), 400, tt.code, tt.parameter)
+	}
+
+	// A token binds the cutoff and its kind.
+	const paged = "series_id=activity-index&page_size=10&published_as_of=2026-03-04T00:00:00Z"
+	token := wantOK(t, s.observations(paged))["next_page_token"]
+	wantOK(t, s.observations(withToken(paged, token)))
+	wantProblem(t, s.observations(withToken("series_id=activity-index&page_size=10&available_as_of=2026-03-04T00:00:00Z", token)), 400, "page_token_mismatch", "page_token")
+}
+
+func TestRevisions(t *testing.T) {
+	s := newServer(t, true)
+	revisions := func(query string) *response {
+		t.Helper()
+		return s.get("/v1/revisions?" + query)
+	}
+
+	// Every revision of November 2025, in revision_number order although
+	// the first arrived last, on a page like that of the observations.
+	fx := loadFixtures(t)
+	bySequence := map[int64][]byte{}
+	for _, r := range fx.Revisions {
+		b, err := json.Marshal(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bySequence[r.Sequence] = b
+	}
+	want := fmt.Sprintf(`{"data":[%s,%s],"position":37,"snapshot_expires_at":"2026-10-01T01:00:00Z","next_page_token":null}`, bySequence[26], bySequence[25])
+	r := revisions("series_id=activity-index&period_start=2025-11-01&period_end=2025-12-01")
+	wantOK(t, r)
+	if got := strings.TrimSpace(string(r.raw)); got != want {
+		t.Errorf("got %s\nwant %s", got, want)
+	}
+
+	// Pages of 10 hold the whole history once, ordered by period and then
+	// revision_number.
+	all := field(t, wantOK(t, revisions("series_id=activity-index&page_size=1000")), "revision_id")
+	if len(all) != len(fx.Revisions) {
+		t.Fatalf("%d revisions, want %d", len(all), len(fx.Revisions))
+	}
+	const query = "series_id=activity-index&page_size=10"
+	var got []string
+	body := wantOK(t, revisions(query))
+	for page := 1; ; page++ {
+		got = append(got, field(t, body, "revision_id")...)
+		if body["next_page_token"] == nil {
+			break
+		}
+		if page == 4 {
+			t.Fatal("the fourth page has a token")
+		}
+		body = wantOK(t, revisions(withToken(query, body["next_page_token"])))
+	}
+	if fmt.Sprint(got) != fmt.Sprint(all) {
+		t.Errorf("pages hold %v, want %v", got, all)
+	}
+	// A token of the revision history cannot continue observations.
+	token := wantOK(t, revisions(query))["next_page_token"]
+	wantProblem(t, s.observations(withToken(query, token)), 400, "page_token_mismatch", "page_token")
+
+	// available_as_of limits the revisions to those available by then.
+	if got := field(t, wantOK(t, revisions("series_id=activity-index&period_start=2025-11-01&period_end=2025-12-01&available_as_of=2025-12-04T12:31:10Z")), "revision_id"); fmt.Sprint(got) != "[rev_nov25_2]" {
+		t.Errorf("at 2025-12-04T12:31:10Z: %v", got)
+	}
+
+	for _, tt := range []struct {
+		query     string
+		code      string
+		parameter any
+	}{
+		{"", "missing_parameter", "series_id"},
+		{"series_id=activity-index&published_as_of=2025-12-04T00:00:00Z", "unknown_parameter", "published_as_of"},
+		{"series_id=activity-index&available_as_of=2026-10-01T00:00:01Z", "cutoff_in_future", "available_as_of"},
+		{"series_id=activity-index&period_start=2026-09-01&period_end=2026-08-01", "invalid_parameter", "period_end"},
+		{"series_id=activity-index&page_size=1001", "invalid_parameter", "page_size"},
+	} {
+		wantProblem(t, revisions(tt.query), 400, tt.code, tt.parameter)
+	}
+	// Lookup comes before entitlement.
+	unentitled := req{key: unentitledKey}
+	wantProblem(t, s.do("GET", "/v1/revisions?series_id=no-such-series", unentitled), 404, "not_found", nil)
+	wantProblem(t, s.do("GET", "/v1/revisions?series_id=activity-index", unentitled), 403, "not_entitled", nil)
+	s.test("PUT", "/test/credentials/cred_research", `{"datasets": []}`)
+	wantProblem(t, revisions(withToken(query, token)), 403, "not_entitled", nil)
+
+	// Revisions after the clock are invisible.
+	s.test("POST", "/test/reset", `{"clock": "2026-09-10T12:30:20Z"}`)
+	body = wantOK(t, revisions("series_id=activity-index&period_start=2026-08-01"))
+	if got := field(t, body, "revision_id"); fmt.Sprint(got) != "[rev_aug26_1]" || body["position"] != float64(36) {
+		t.Errorf("at 2026-09-10T12:30:20Z: %v at position %v", got, body["position"])
+	}
+}
+
+func TestReleaseCalendar(t *testing.T) {
+	s := newServer(t, true)
+	calendar := func(query string, r req) *response {
+		t.Helper()
+		return s.do("GET", "/v1/release-calendar?"+query, r)
+	}
+	research, unentitled := req{key: researchKey}, req{key: unentitledKey}
+
+	// The example of spec/api.md, byte for byte.
+	const july = "series_id=activity-index&period_start=2026-07-01&period_end=2026-08-01"
+	want := compact(t, `{"data": [{"series_id": "activity-index", "period_start": "2026-07-01", "period_end": "2026-08-01", "scheduled_at": "2026-08-03T12:30:00Z"}]}`)
+	r := calendar(july, research)
+	wantOK(t, r)
+	if got := strings.TrimSpace(string(r.raw)); got != want {
+		t.Errorf("got %s\nwant %s", got, want)
+	}
+
+	// Without a range, every entry of the fixture, ordered by period_start.
+	entries := slices.Clone(loadFixtures(t).Releases)
+	slices.SortFunc(entries, func(a, b fixtures.Release) int { return strings.Compare(a.PeriodStart, b.PeriodStart) })
+	whole, err := json.Marshal(map[string]any{"data": entries})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r = calendar("series_id=activity-index", research)
+	wantOK(t, r)
+	if got := strings.TrimSpace(string(r.raw)); got != string(whole) || len(entries) != 32 {
+		t.Errorf("the whole calendar: got %s\nwant %s", got, whole)
+	}
+
+	// A range matches whole periods.
+	for _, tt := range []struct{ query, want string }{
+		{"period_start=2026-07-15&period_end=2026-09-01", "[2026-08-01]"},
+		{"period_start=2026-07-01&period_end=2026-08-15", "[2026-07-01]"},
+		{"period_start=2026-07-15&period_end=2026-08-15", "[]"},
+		{"period_start=2026-08-01", "[2026-08-01]"},
+		{"period_end=2024-02-01", "[2024-01-01]"},
+	} {
+		if got := field(t, wantOK(t, calendar("series_id=activity-index&"+tt.query, research)), "period_start"); fmt.Sprint(got) != tt.want {
+			t.Errorf("%s: %v, want %s", tt.query, got, tt.want)
+		}
+	}
+
+	// Any customer key may read it, whatever the clock shows.
+	s.test("POST", "/test/reset", `{"clock": "2024-01-01T00:00:00Z"}`)
+	if got := strings.TrimSpace(string(calendar(july, unentitled).raw)); got != want {
+		t.Errorf("before any revision, without entitlement: got %s", got)
+	}
+
+	wantProblem(t, calendar(july, req{}), 401, "unauthenticated", nil)
+	wantProblem(t, calendar("series_id=no-such-series", unentitled), 404, "not_found", nil)
+	for _, tt := range []struct {
+		query     string
+		code      string
+		parameter any
+	}{
+		{"", "missing_parameter", "series_id"},
+		{"series_id=activity-index&page_size=10", "unknown_parameter", "page_size"},
+		{"series_id=activity-index&available_as_of=2024-01-01T00:00:00Z", "unknown_parameter", "available_as_of"},
+		{"series_id=activity-index&period_start=2026-08-01&period_end=2026-08-01", "invalid_parameter", "period_end"},
+		{"series_id=activity-index&period_end=2026-13-01", "invalid_parameter", "period_end"},
+	} {
+		wantProblem(t, calendar(tt.query, research), 400, tt.code, tt.parameter)
+	}
 }
