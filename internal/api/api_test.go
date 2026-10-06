@@ -138,7 +138,8 @@ func (s *testServer) do(method, target string, r req) *response {
 	if err := openAPI(s.t).Validate(method, hr.URL.EscapedPath(), resp.StatusCode, resp.Header, raw); err != nil {
 		s.t.Errorf("%s %s: %v", method, target, err)
 	}
-	if strings.Contains(resp.Header.Get("Content-Type"), "json") {
+	// An export file, application/x-ndjson, is not one JSON value.
+	if ct := resp.Header.Get("Content-Type"); ct == "application/json" || ct == "application/problem+json" {
 		if err := json.Unmarshal(raw, &out.body); err != nil {
 			s.t.Fatalf("%s %s: body %q: %v", method, target, raw, err)
 		}

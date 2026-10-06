@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nslaughter/financial-data-api/internal/exports"
 	"github.com/nslaughter/financial-data-api/internal/fixtures"
 )
 
@@ -32,15 +33,19 @@ func (c *credential) entitled(datasetID string) bool {
 	return slices.Contains(c.datasets, datasetID)
 }
 
-// state is everything requests can change: the clock, the credentials, and
-// the key that signs page tokens. Every read and change holds mu, so a
-// request sees them as they were at one moment.
+// state is everything requests can change: the clock, the credentials, the
+// key that signs page tokens, and the exports. Every read and change holds
+// mu, so a request sees them as they were at one moment.
 type state struct {
 	mu          sync.Mutex
 	clock       time.Time
 	tokenKey    []byte                 // replaced, never changed in place
 	credentials map[string]*credential // by credential_id
 	ids         map[string]string      // credential_id by api_key
+	// exports is replaced by an empty store at every reset. A request that
+	// read the state before a reset uses the store it read, so an export it
+	// creates is one the reset deleted.
+	exports *exports.Store
 
 	// start and initial are what a reset restores: CLOCK_START and the
 	// fixture credentials.
@@ -48,7 +53,7 @@ type state struct {
 	initial []fixtures.Credential
 }
 
-func newState(start time.Time, initial []fixtures.Credential) (*state, error) {
+func newState(start time.Time, initial []fixtures.Credential, store *exports.Store) (*state, error) {
 	key, err := newTokenKey()
 	if err != nil {
 		return nil, err
@@ -57,16 +62,17 @@ func newState(start time.Time, initial []fixtures.Credential) (*state, error) {
 	for _, c := range initial {
 		s.ids[c.APIKey] = c.CredentialID
 	}
-	s.restore(start, key)
+	s.restore(start, key, store)
 	return s, nil
 }
 
-// restore sets the clock and the page-token key, and restores every
-// credential from the fixtures. The caller holds mu, or has the only
-// reference to s.
-func (s *state) restore(clock time.Time, tokenKey []byte) {
+// restore sets the clock, the page-token key, and the export store, and
+// restores every credential from the fixtures. The caller holds mu, or has
+// the only reference to s.
+func (s *state) restore(clock time.Time, tokenKey []byte, store *exports.Store) {
 	s.clock = clock
 	s.tokenKey = tokenKey
+	s.exports = store
 	s.credentials = make(map[string]*credential, len(s.initial))
 	for _, c := range s.initial {
 		s.credentials[c.CredentialID] = &credential{
@@ -92,18 +98,21 @@ type moment struct {
 	now time.Time
 	// tokenKey is the key that signs page tokens.
 	tokenKey []byte
+	// exports is the export store.
+	exports *exports.Store
 	// cred is a copy of the request's credential, or nil.
 	cred *credential
 }
 
-// view reads the clock, the page-token key, and a copy of the credential
-// whose api_key is apiKey, together. The credential is nil if no credential
-// has that key. The key is looked up on its own first: an unknown key's
-// credential_id would be the empty string, which a credential may have.
+// view reads the clock, the page-token key, the export store, and a copy of
+// the credential whose api_key is apiKey, together. The credential is nil if
+// no credential has that key. The key is looked up on its own first: an
+// unknown key's credential_id would be the empty string, which a credential
+// may have.
 func (s *state) view(apiKey string) moment {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	m := moment{now: s.clock, tokenKey: s.tokenKey}
+	m := moment{now: s.clock, tokenKey: s.tokenKey, exports: s.exports}
 	id, ok := s.ids[apiKey]
 	if !ok {
 		return m
@@ -131,8 +140,9 @@ func (s *state) setClock(t time.Time) (time.Time, *problem) {
 }
 
 // reset returns the state to its startup state, with the clock at clock, or
-// at CLOCK_START if clock is nil, and a new page-token key, so that earlier
-// tokens fail their signature check.
+// at CLOCK_START if clock is nil, a new page-token key, so that earlier
+// tokens fail their signature check, and no exports. The new export store
+// never issues an identifier an earlier one issued.
 func (s *state) reset(clock *time.Time) (time.Time, error) {
 	key, err := newTokenKey()
 	if err != nil {
@@ -144,7 +154,7 @@ func (s *state) reset(clock *time.Time) (time.Time, error) {
 	if clock != nil {
 		t = *clock
 	}
-	s.restore(t, key)
+	s.restore(t, key, s.exports.Cleared())
 	return s.clock, nil
 }
 
