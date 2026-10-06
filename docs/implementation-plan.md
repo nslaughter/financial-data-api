@@ -27,7 +27,7 @@ start until the operator records the decision here.
 | 4. Serve the foundation | Done | [#8](https://github.com/nslaughter/financial-data-api/pull/8), [#9](https://github.com/nslaughter/financial-data-api/pull/9) |
 | 5. Serve observations with pagination | Done | [#10](https://github.com/nslaughter/financial-data-api/pull/10) |
 | 6. Serve the change stream | Done | [#11](https://github.com/nslaughter/financial-data-api/pull/11) |
-| 7. Publish the demo API image | Needs operator decision | |
+| 7. Publish the demo API image | Not started | |
 | 8. Add `published_as_of`, the revision history, and the release calendar | Not started | |
 | 9. Add exports | Not started | |
 | 10. Publish the full API image | Not started | |
@@ -209,6 +209,16 @@ Before this step starts, the operator chooses the image name and the tag
 scheme that triggers a release. Release tags must not match `contract-v*`,
 which marks contract versions. The decision is recorded here and the step's
 status changes to `Not started`.
+
+The operator chose both on October 6, 2026:
+
+- **Image name:** `ghcr.io/nslaughter/financial-data-api`.
+- **Release tags:** the server's own semantic version, `vX.Y.Z`, which is
+  also the Go module's version. This stage 1 image is `v0.1.0`, and the
+  stage 2 image is `v0.2.0`. The release workflow triggers on tags matching
+  `v[0-9]*`, which no `contract-v*` tag matches. The image's tag is the
+  version without its `v`, such as `0.1.0`. The contract version is in the
+  image's labels and in `GET /v1/meta`, not in the tag.
 
 - A `Dockerfile` that builds a static binary into a minimal image, with the
   fixtures embedded and the default port exposed. Labels record the contract
