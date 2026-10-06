@@ -252,6 +252,12 @@ Stage 1 is complete here. The SDKs can pin the image.
   `GET /v1/revisions`, so the stage 1 scenario in `request-errors` no longer
   applies.
 
+The operator confirmed on October 6, 2026, a correction made in this step's
+review: the Commands table in [`AGENTS.md`](../AGENTS.md) runs the
+conformance suite with `--stage 2` and the `--file` flags of the CI job until
+step 9 adds exports. The `--stage 1` command it gave before fails against a
+server that serves `published_as_of` and `GET /v1/revisions`.
+
 ### 9. Add exports
 
 - Create, read, and download exports:
