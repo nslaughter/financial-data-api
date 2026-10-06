@@ -3,6 +3,7 @@ package history
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -366,5 +367,29 @@ func TestReleases(t *testing.T) {
 	}
 	if got := h.Releases("no-such-series", nil, nil); got == nil || len(got) != 0 {
 		t.Errorf("an unknown series: %v, want an empty slice", got)
+	}
+}
+
+// The fixture lists the calendar in period_start order, but the data
+// contract does not require that order of the file, so Releases must not
+// depend on it.
+func TestReleasesAreOrderedWhateverTheFileOrder(t *testing.T) {
+	f, _ := load(t)
+	slices.Reverse(f.Releases)
+	if vs := fixtures.Check(f); len(vs) > 0 {
+		t.Fatalf("the reversed fixtures break invariants: %v", vs)
+	}
+	h, err := New(f)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	got := h.Releases("activity-index", nil, nil)
+	if len(got) != len(f.Releases) {
+		t.Fatalf("%d releases, want every one of the %d", len(got), len(f.Releases))
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i-1].PeriodStart >= got[i].PeriodStart {
+			t.Errorf("%s comes before %s", got[i-1].PeriodStart, got[i].PeriodStart)
+		}
 	}
 }
