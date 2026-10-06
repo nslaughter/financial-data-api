@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"time"
 )
@@ -75,7 +76,12 @@ func (s *Server) reset(w http.ResponseWriter, c *call) *problem {
 		}
 		clock = &t
 	}
-	writeJSON(w, http.StatusOK, clockResponse{Now: formatTimestamp(s.state.reset(clock))})
+	now, err := s.state.reset(clock)
+	if err != nil {
+		log.Printf("api: resetting: %v", err)
+		return newProblem("internal", nil, "The server could not reset.")
+	}
+	writeJSON(w, http.StatusOK, clockResponse{Now: formatTimestamp(now)})
 	return nil
 }
 

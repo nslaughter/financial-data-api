@@ -15,8 +15,6 @@ import (
 // remove their endpoints from it, until every stage 1 check runs.
 func laterEndpoint(files []*conformance.File, res conformance.Result) string {
 	switch res.Kind {
-	case "query check", "page check":
-		return "GET /v1/observations (step 5)"
 	case "read check":
 		return "GET /v1/datasets/{dataset_id}/changes (step 6)"
 	case "scenario":
@@ -32,10 +30,7 @@ func laterEndpoint(files []*conformance.File, res conformance.Result) string {
 					if st.Request == nil {
 						continue
 					}
-					switch path := *st.Request.Path; {
-					case strings.HasPrefix(path, "/v1/observations"):
-						return "GET /v1/observations (step 5)"
-					case strings.HasSuffix(path, "/changes"):
+					if strings.HasSuffix(*st.Request.Path, "/changes") {
 						return "GET /v1/datasets/{dataset_id}/changes (step 6)"
 					}
 				}

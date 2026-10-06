@@ -33,3 +33,42 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./...
+
+  conformance:
+    name: Conformance (stage 1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: go build -o bin/ ./cmd/server ./cmd/conformance
+      - name: Start the server
+        run: |
+          TEST_CONTROL=enabled nohup bin/server > server.log 2>&1 &
+          for _ in $(seq 1 50); do
+            if curl -fsS http://localhost:8080/v1/meta > /dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.2
+          done
+          echo "The server did not become ready:"
+          cat server.log
+          exit 1
+      - name: Run the conformance suite
+        # The files that the steps of docs/implementation-plan.md have
+        # turned on so far.
+        run: |
+          bin/conformance --base-url http://localhost:8080 --stage 1 \
+            --file august-2026-at-cutoffs \
+            --file full-history \
+            --file missing-value \
+            --file withdrawal-and-rerelease \
+            --file out-of-order-arrival \
+            --file provider-correction \
+            --file late-source-release \
+            --file pagination
+      - name: Show the server log
+        if: failure()
+        run: cat server.log

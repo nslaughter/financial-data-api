@@ -32,12 +32,13 @@ func (c *credential) entitled(datasetID string) bool {
 	return slices.Contains(c.datasets, datasetID)
 }
 
-// state is everything requests can change: the clock and the credentials.
-// Every read and change holds mu, so a request sees the clock and its
-// credential as they were at one moment.
+// state is everything requests can change: the clock, the credentials, and
+// the key that signs page tokens. Every read and change holds mu, so a
+// request sees them as they were at one moment.
 type state struct {
 	mu          sync.Mutex
 	clock       time.Time
+	tokenKey    []byte                 // replaced, never changed in place
 	credentials map[string]*credential // by credential_id
 	ids         map[string]string      // credential_id by api_key
 
@@ -47,19 +48,25 @@ type state struct {
 	initial []fixtures.Credential
 }
 
-func newState(start time.Time, initial []fixtures.Credential) *state {
+func newState(start time.Time, initial []fixtures.Credential) (*state, error) {
+	key, err := newTokenKey()
+	if err != nil {
+		return nil, err
+	}
 	s := &state{start: start, initial: initial, ids: make(map[string]string, len(initial))}
 	for _, c := range initial {
 		s.ids[c.APIKey] = c.CredentialID
 	}
-	s.restore(start)
-	return s
+	s.restore(start, key)
+	return s, nil
 }
 
-// restore sets the clock and restores every credential from the fixtures.
-// The caller holds mu, or has the only reference to s.
-func (s *state) restore(clock time.Time) {
+// restore sets the clock and the page-token key, and restores every
+// credential from the fixtures. The caller holds mu, or has the only
+// reference to s.
+func (s *state) restore(clock time.Time, tokenKey []byte) {
 	s.clock = clock
+	s.tokenKey = tokenKey
 	s.credentials = make(map[string]*credential, len(s.initial))
 	for _, c := range s.initial {
 		s.credentials[c.CredentialID] = &credential{
@@ -79,24 +86,36 @@ func (s *state) now() time.Time {
 	return s.clock
 }
 
-// view reads the clock and a copy of the credential whose api_key is key,
-// together, or nil if no credential has that key. The key is looked up on
-// its own first: an unknown key's credential_id would be the empty string,
-// which a credential may have.
-func (s *state) view(key string) (time.Time, *credential) {
+// moment is what a request reads from the state at once.
+type moment struct {
+	// now is the clock.
+	now time.Time
+	// tokenKey is the key that signs page tokens.
+	tokenKey []byte
+	// cred is a copy of the request's credential, or nil.
+	cred *credential
+}
+
+// view reads the clock, the page-token key, and a copy of the credential
+// whose api_key is apiKey, together. The credential is nil if no credential
+// has that key. The key is looked up on its own first: an unknown key's
+// credential_id would be the empty string, which a credential may have.
+func (s *state) view(apiKey string) moment {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	id, ok := s.ids[key]
+	m := moment{now: s.clock, tokenKey: s.tokenKey}
+	id, ok := s.ids[apiKey]
 	if !ok {
-		return s.clock, nil
+		return m
 	}
 	c, ok := s.credentials[id]
 	if !ok {
-		return s.clock, nil
+		return m
 	}
 	copied := *c
 	copied.datasets = slices.Clone(c.datasets)
-	return s.clock, &copied
+	m.cred = &copied
+	return m
 }
 
 // setClock moves the clock forward to t. A time before the clock is
@@ -112,16 +131,21 @@ func (s *state) setClock(t time.Time) (time.Time, *problem) {
 }
 
 // reset returns the state to its startup state, with the clock at clock, or
-// at CLOCK_START if clock is nil.
-func (s *state) reset(clock *time.Time) time.Time {
+// at CLOCK_START if clock is nil, and a new page-token key, so that earlier
+// tokens fail their signature check.
+func (s *state) reset(clock *time.Time) (time.Time, error) {
+	key, err := newTokenKey()
+	if err != nil {
+		return time.Time{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t := s.start
 	if clock != nil {
 		t = *clock
 	}
-	s.restore(t)
-	return s.clock
+	s.restore(t, key)
+	return s.clock, nil
 }
 
 // credentialChange is a change PUT /test/credentials/{credential_id} makes:
