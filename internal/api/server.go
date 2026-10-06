@@ -132,6 +132,7 @@ func (s *Server) routeTable(testControl bool) []route {
 		{template: "/v1/meta", endpoints: map[string]endpoint{http.MethodGet: {handle: s.meta}}},
 		{template: "/v1/datasets", endpoints: map[string]endpoint{http.MethodGet: customer(s.listDatasets)}},
 		{template: "/v1/datasets/{dataset_id}", endpoints: map[string]endpoint{http.MethodGet: customer(s.getDataset)}},
+		{template: "/v1/datasets/{dataset_id}/changes", endpoints: map[string]endpoint{http.MethodGet: customer(s.readChanges)}},
 		{template: "/v1/series", endpoints: map[string]endpoint{http.MethodGet: customer(s.listSeries)}},
 		{template: "/v1/series/{series_id}", endpoints: map[string]endpoint{http.MethodGet: customer(s.getSeries)}},
 		{template: "/v1/observations", endpoints: map[string]endpoint{http.MethodGet: customer(s.queryObservations)}},
