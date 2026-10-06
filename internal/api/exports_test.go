@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/nslaughter/financial-data-api/internal/history"
@@ -287,27 +286,50 @@ func TestExportCreatedAcrossAReset(t *testing.T) {
 	}
 }
 
-// TestConcurrentExports creates and reads exports in parallel, and checks
-// that every export has its own identifier and can be read back.
+// TestConcurrentExports creates and downloads exports in parallel, and checks
+// that every export has its own identifier, that every download is the
+// canonical file of the snapshot, with the length and digest its manifest
+// reports, and that every export can be read back.
 func TestConcurrentExports(t *testing.T) {
 	s := newServer(t, true)
+	h, err := history.New(loadFixtures(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := history.ExportFile(h.Snapshot("core-indicators", 37))
 	const n = 16
 	ids := make([]string, n)
-	var wg sync.WaitGroup
-	for i := range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			r := s.do(http.MethodPost, createExportPath, req{key: researchKey})
-			ids[i], _ = r.body["export_id"].(string)
-			s.get("/v1/exports/" + ids[i] + "/files/revisions.jsonl")
-		}()
+	// Each export is created and downloaded by a parallel subtest, which has
+	// its own T, so that a failed request can stop it.
+	ok := t.Run("parallel", func(t *testing.T) {
+		for i := range n {
+			t.Run(strconv.Itoa(i), func(t *testing.T) {
+				t.Parallel()
+				ps := &testServer{t: t, url: s.url}
+				id, r := ps.createExport()
+				ids[i] = id
+				var m manifestResponse
+				if err := json.Unmarshal(r.raw, &m); err != nil || len(m.Files) != 1 {
+					t.Fatalf("manifest %s: %v", r.raw, err)
+				}
+				got := ps.download(id)
+				if !bytes.Equal(got, want) {
+					t.Errorf("the file of %s is not the canonical file of the snapshot at 37", id)
+				}
+				sum := sha256.Sum256(got)
+				if digest := hex.EncodeToString(sum[:]); len(got) != m.Files[0].SizeBytes || digest != m.Files[0].SHA256 {
+					t.Errorf("%d bytes with SHA-256 %s, not those of the manifest", len(got), digest)
+				}
+			})
+		}
+	})
+	if !ok {
+		return
 	}
-	wg.Wait()
 	seen := map[string]bool{}
 	for _, id := range ids {
-		if seen[id] || !exportIDPattern.MatchString(id) {
-			t.Errorf("identifier %q", id)
+		if seen[id] {
+			t.Errorf("identifier %s issued twice", id)
 		}
 		seen[id] = true
 		wantOK(t, s.get("/v1/exports/"+id))
