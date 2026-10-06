@@ -11,6 +11,13 @@ on:
 permissions:
   contents: read
 
+# Runs for the same ref wait for each other instead of overlapping. If a tag
+# is pushed again while its first run is in progress, the second run's check
+# for a published version then sees the first run's push.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   IMAGE: ghcr.io/nslaughter/financial-data-api
 
