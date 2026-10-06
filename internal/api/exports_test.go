@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strconv"
 	"strings"
@@ -248,24 +250,39 @@ func TestResetDeletesExports(t *testing.T) {
 	wantOK(t, s.get("/v1/exports/"+id))
 }
 
-// TestExportCreatedAcrossAReset checks that an export created by a request
-// that read the state before a reset is one the reset deleted, so that no
-// export from before a reset survives it.
+// TestExportCreatedAcrossAReset checks that the handler puts an export
+// created by a request that read the state before a reset into the store it
+// read, which the reset replaced, so that no export from before a reset
+// survives it.
 func TestExportCreatedAcrossAReset(t *testing.T) {
 	f := loadFixtures(t)
 	srv, err := New(Config{Fixtures: f, ContractVersion: f.ContractVersion, ClockStart: mustTime(t, startClock), TestControl: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	before := srv.state.view(researchKey)
+	// The request reads the state as the server's authentication does, the
+	// state is reset, and then the handler runs.
+	c := &call{
+		r:        httptest.NewRequest(http.MethodPost, createExportPath, nil),
+		endpoint: "POST /v1/datasets/{dataset_id}/exports",
+		path:     map[string]string{"dataset_id": "core-indicators"},
+		moment:   srv.state.view(researchKey),
+	}
 	if _, err := srv.state.reset(nil); err != nil {
 		t.Fatal(err)
 	}
-	e, err := before.exports.Create("core-indicators", 37, before.now)
-	if err != nil {
+	rec := httptest.NewRecorder()
+	if p := srv.createExport(rec, c); p != nil || rec.Code != http.StatusCreated {
+		t.Fatalf("got %d %s, problem %+v", rec.Code, rec.Body, p)
+	}
+	var m manifestResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &m); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := srv.state.view(researchKey).exports.Get(e.ID); ok {
+	if _, ok := c.exports.Get(m.ExportID); !ok {
+		t.Error("the export is not in the store the request read")
+	}
+	if _, ok := srv.state.view(researchKey).exports.Get(m.ExportID); ok {
 		t.Error("an export created before a reset survived it")
 	}
 }
