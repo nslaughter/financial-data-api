@@ -3,6 +3,10 @@ name: Release
 # On a pull request, build the image and run the conformance suite against
 # the container. On a version tag, do the same, then publish the image that
 # passed. The repository owner pushes the tag.
+#
+# Only the Publish job, which runs on a version tag, can write packages. It
+# runs none of the repository's code: it loads the image the Image job tested
+# and pushes it.
 on:
   pull_request:
   push:
@@ -25,12 +29,11 @@ jobs:
   image:
     name: Image
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      # To publish the image on a version tag.
-      packages: write
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
     steps:
       - name: Check the tag
+        id: tag
         if: github.event_name == 'push'
         # A release tag is the server's version, vX.Y.Z. The image's tag is
         # the version without its v.
@@ -40,7 +43,12 @@ jobs:
             exit 1
           fi
           echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v5
+        with:
+          # No later step uses Git, so the token is not left in .git/config
+          # for the code the job builds and runs.
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -90,8 +98,33 @@ jobs:
       - name: Show the container log
         if: failure()
         run: docker logs server
-      - name: Publish the image
+      - name: Save the image
         if: github.event_name == 'push'
+        run: docker save --output image.tar image-under-test
+      - uses: actions/upload-artifact@v7
+        if: github.event_name == 'push'
+        with:
+          name: image
+          path: image.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish
+    needs: image
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    env:
+      VERSION: ${{ needs.image.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+      - name: Load the image
+        run: docker load --input image.tar
+      - name: Publish the image
         # The SDKs and the monitor pin an image tag, so a published version
         # is never replaced. The image is pushed only when the registry
         # answers 404 for the version's manifest. Any other answer, or none,
