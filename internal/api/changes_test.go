@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -103,6 +104,27 @@ func TestChanges(t *testing.T) {
 		wantProblem(t, s.changes(tt.query), 400, tt.code, tt.parameter)
 	}
 	wantProblem(t, s.changes("after=9007199254740991"), 400, "position_ahead", "after")
+}
+
+// TestChangesLimits checks the default and maximum limits on a stream longer
+// than both: the fixtures with copies of their last revision appended, to
+// 1,100 events.
+func TestChangesLimits(t *testing.T) {
+	const events = 1100
+	f := loadFixtures(t)
+	last := f.Revisions[len(f.Revisions)-1]
+	for seq := last.Sequence + 1; seq <= events; seq++ {
+		r := last
+		r.Sequence = seq
+		r.RevisionID = fmt.Sprintf("rev_copy_%d", seq)
+		f.Revisions = append(f.Revisions, r)
+	}
+	s := newServerFor(t, f, true)
+
+	// Without limit, a read returns 100 events; with the maximum, 1,000.
+	wantRead(t, s.changes("after=0"), 1, 100, 100, events)
+	wantRead(t, s.changes("after=0&limit=1000"), 1, 1000, 1000, events)
+	wantRead(t, s.changes("after=1000"), 1001, events, events, events)
 }
 
 // TestChangesErrorOrder checks the order of spec/api.md on the change
