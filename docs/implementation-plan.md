@@ -26,7 +26,7 @@ start until the operator records the decision here.
 | 3. Build the conformance runner | Done | [#7](https://github.com/nslaughter/financial-data-api/pull/7) |
 | 4. Serve the foundation | Done | [#8](https://github.com/nslaughter/financial-data-api/pull/8), [#9](https://github.com/nslaughter/financial-data-api/pull/9) |
 | 5. Serve observations with pagination | Done | [#10](https://github.com/nslaughter/financial-data-api/pull/10) |
-| 6. Serve the change stream | Done | |
+| 6. Serve the change stream | Done | [#11](https://github.com/nslaughter/financial-data-api/pull/11) |
 | 7. Publish the demo API image | Needs operator decision | |
 | 8. Add `published_as_of`, the revision history, and the release calendar | Not started | |
 | 9. Add exports | Not started | |
