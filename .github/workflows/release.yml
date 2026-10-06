@@ -1,14 +1,25 @@
 name: Release
 
-# On a pull request, build the image and run the conformance suite against
-# the container. On a version tag, do the same, then publish the image that
-# passed. The repository owner pushes the tag.
+# On a pull request that changes the image or this workflow, build the image
+# and run the conformance suite against the container. On a version tag, do
+# the same, then publish the image that passed. The repository owner pushes
+# the tag.
+#
+# Pull requests that change only the server are tested by the CI workflow,
+# not here. The suite here runs at the stage the image's label names, which
+# stays 1 until step 10 of the implementation plan. The servers of steps 8
+# and 9 serve parameters and paths that a stage 1 scenario in request-errors
+# expects to be refused, so that suite would fail on their pull requests.
 #
 # Only the Publish job, which runs on a version tag, can write packages. It
 # runs none of the repository's code: it loads the image the Image job tested
 # and pushes it.
 on:
   pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/release.yml
   push:
     tags: ['v[0-9]*']
 

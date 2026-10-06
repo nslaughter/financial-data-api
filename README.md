@@ -165,7 +165,8 @@ Several delivery rules matter as much as the schema:
   see [Run the demo API](#run-the-demo-api).
 - Query, export, and update examples.
 - Contract and authorization checks in CI. The stage 1 conformance suite runs
-  on every pull request, against the server and its container image.
+  against the server on every pull request, and against its container image
+  on each pull request that changes the image and before each release.
 - A tagged release that names the compatible SDK version.
 - Documented retention and recovery policies, and the limits of the historical
   availability claims.
