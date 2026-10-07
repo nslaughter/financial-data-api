@@ -275,9 +275,25 @@ server that serves `published_as_of` and `GET /v1/revisions`.
 - Update the image labels and the README for stage 2, and run the release
   workflow with `--stage 2`.
 
+The operator settled two questions raised in this step's review on
+October 7, 2026, and [#17](https://github.com/nslaughter/financial-data-api/pull/17)
+applies them:
+
+- The Release workflow runs on every pull request, with no `paths` filter.
+  The filter kept a stage 1 suite from running against the servers of steps
+  8 and 9, and that reason ended with this step. Each pull request builds
+  the image, checks its labels, and runs the suite of the image's stage
+  against the container, so a failure only the image shows fails the pull
+  request instead of the next version tag.
+- A pull request that changes the contract version in `fixtures/` changes
+  the Dockerfile's `contract-version` label in the same pull request. The
+  Release workflow's label check enforces it.
+
 ## After stage 2
 
 - The monitor (stage 3) uses the published image and runs `release-timing`.
 - The migration stage's breaking change is an open question in the
   [data contract](../spec/data-contract.md#open-questions); it needs a
-  decision and a new contract version before any work starts.
+  decision and a new contract version before any work starts. The operator
+  reviewed it again on October 7, 2026, and left it open until stage 3 is
+  underway; stages 1 to 3 do not depend on it.
