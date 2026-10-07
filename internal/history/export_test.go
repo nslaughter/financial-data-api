@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nslaughter/financial-data-api/internal/expected"
 	"github.com/nslaughter/financial-data-api/internal/fixtures"
 )
 
@@ -59,24 +60,15 @@ func specDigests(t *testing.T) []exportDigest {
 // with a sha256, and the file's size_bytes and record_count where given.
 func manifestDigests(t *testing.T, f *fixtures.Fixtures, name string) []exportDigest {
 	t.Helper()
-	var file expectedFile
-	readExpected(t, f, name, &file)
-	var scenarios []struct {
-		Name  string
-		Steps []struct {
-			Expect struct {
-				Body map[string]any `json:"body"`
-			} `json:"expect"`
-		} `json:"steps"`
-	}
-	if err := json.Unmarshal(file.Scenarios, &scenarios); err != nil {
-		t.Fatalf("%s: %v", name, err)
-	}
 	var out []exportDigest
-	for _, s := range scenarios {
+	for _, s := range expectedFile(t, f, name).Scenarios {
 		for i, step := range s.Steps {
-			position, ok := step.Expect.Body["position"].(float64)
-			files, _ := step.Expect.Body["files"].([]any)
+			if step.Expect == nil {
+				continue
+			}
+			body, _ := step.Expect.Body.Value.(map[string]any)
+			position, ok := integerOf(body["position"])
+			files, _ := body["files"].([]any)
 			if !ok || len(files) != 1 {
 				continue
 			}
@@ -87,21 +79,35 @@ func manifestDigests(t *testing.T, f *fixtures.Fixtures, name string) []exportDi
 			}
 			d := exportDigest{
 				source:   fmt.Sprintf("%s: %s: step %d", name, s.Name, i+1),
-				position: int64(position),
+				position: position,
 				size:     -1,
 				records:  -1,
 				sha256:   sum,
 			}
-			if size, ok := entry["size_bytes"].(float64); ok {
+			if size, ok := integerOf(entry["size_bytes"]); ok {
 				d.size = int(size)
 			}
-			if records, ok := entry["record_count"].(float64); ok {
+			if records, ok := integerOf(entry["record_count"]); ok {
 				d.records = int(records)
 			}
 			out = append(out, d)
 		}
 	}
 	return out
+}
+
+// integerOf returns v, a JSON value, when it is an integer that fits an
+// int64.
+func integerOf(v any) (int64, bool) {
+	n, ok := v.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	i, ok := expected.Integer(n)
+	if !ok || !i.IsInt64() {
+		return 0, false
+	}
+	return i.Int64(), true
 }
 
 func TestExportDigests(t *testing.T) {
@@ -120,7 +126,7 @@ func TestExportDigests(t *testing.T) {
 	}
 	for _, d := range digests {
 		t.Run(fmt.Sprintf("%s: position %d", d.source, d.position), func(t *testing.T) {
-			file := ExportFile(h.Snapshot(streamDataset, d.position))
+			file := ExportFile(h.Snapshot(expected.StreamDataset, d.position))
 			sum := sha256.Sum256(file)
 			if got := hex.EncodeToString(sum[:]); got != d.sha256 {
 				t.Errorf("sha256 %s, want %s", got, d.sha256)

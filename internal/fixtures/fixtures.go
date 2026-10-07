@@ -29,6 +29,12 @@ const (
 	Withdrawal         = "withdrawal"
 )
 
+// The kinds of credential in credentials.json.
+const (
+	CustomerKind    = "customer"
+	TestControlKind = "test_control"
+)
+
 // Fixtures holds every fixture record in file order.
 type Fixtures struct {
 	// ContractVersion is the contract_version that every fixture file records.

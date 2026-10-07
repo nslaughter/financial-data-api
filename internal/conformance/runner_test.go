@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/nslaughter/financial-data-api/internal/expected"
 )
 
 // requestLines returns each request as "METHOD /path?query".
@@ -195,7 +197,7 @@ func TestPageCheck(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newFake(t)
 			f.handle("GET /v1/observations", pagesOf(tt.sizes...))
-			results := newRunner(t, f, 1).Run(context.Background(), []*File{file}, "")
+			results := newRunner(t, f, 1).Run(context.Background(), []*expected.File{file}, "")
 			if len(results) != 2 || results[0].Kind != "query check" || results[1].Kind != "page check" {
 				t.Fatalf("results %v", results)
 			}
@@ -231,7 +233,7 @@ func TestPageCheckComparesFirstAndLastRecords(t *testing.T) {
 	file := parse(t, `{
 		"checks": [{"name": "q", "query": {"series_id": "activity-index"}, "expected": `+observationIDs(recs)+`}],
 		"pages_with_page_size_10": [{"first": "obs_jan24", "last": "obs_mar24", "count": 2}, {"first": "obs_mar24", "last": "obs_mar24", "count": 1}]}`)
-	results := newRunner(t, f, 1).Run(context.Background(), []*File{file}, "")
+	results := newRunner(t, f, 1).Run(context.Background(), []*expected.File{file}, "")
 	fail := mustFail(t, results[1], 0, "page 1, last record.observation_id")
 	if fail.Expected != `"obs_mar24"` || fail.Actual != `"obs_feb24"` {
 		t.Errorf("expected %s, actual %s", fail.Expected, fail.Actual)
@@ -278,7 +280,7 @@ func TestReadCheck(t *testing.T) {
 		{"name": "b", "after_position": 37, "limit": null, "expected": [], "expected_next_position": 37, "expected_head_position": 37},
 		{"name": "c", "after_position": 37, "limit": null, "expected": [], "expected_next_position": 37, "expected_head_position": 36}
 	]}`)
-	results := newRunner(t, f, 1).Run(context.Background(), []*File{file}, "")
+	results := newRunner(t, f, 1).Run(context.Background(), []*expected.File{file}, "")
 	mustPass(t, results[0])
 	mustPass(t, results[1])
 	fail := mustFail(t, results[2], 0, "body.head_position")
@@ -326,8 +328,8 @@ func TestTimingChecks(t *testing.T) {
 		}
 		writeJSON(w, http.StatusOK, observationPage(data[page:page+1], token))
 	})
-	file := fileNamed(t, loadExpected(t), timingFile)
-	results := newRunner(t, f, 2).Run(context.Background(), []*File{file}, "")
+	file := fileNamed(t, loadExpected(t), expected.TimingFile)
+	results := newRunner(t, f, 2).Run(context.Background(), []*expected.File{file}, "")
 	if len(results) != len(file.TimingChecks) {
 		t.Fatalf("%d results for %d checks", len(results), len(file.TimingChecks))
 	}
@@ -361,8 +363,8 @@ func TestTiming(t *testing.T) {
 		"source_delay_seconds":        json.Number("0"),
 		"availability_delay_seconds":  json.Number("86470"),
 	}
-	if d := match("", want, got); d != nil {
-		t.Fatalf("%s: expected %s, got %s", d.at, d.expected, d.actual)
+	if d := expected.Match("", want, got); d != nil {
+		t.Fatalf("%s: expected %s, got %s", d.At, d.Expected, d.Actual)
 	}
 	if _, err := timing("2025-12-03T12:30:00Z", nil); err == nil {
 		t.Error("timing of no revisions: want an error")
@@ -890,7 +892,7 @@ func TestStages(t *testing.T) {
 	for _, stage := range []int{1, 2} {
 		f := newFake(t)
 		f.reply("GET /v1/meta", http.StatusOK, meta())
-		results := newRunner(t, f, stage).Run(context.Background(), []*File{file}, "")
+		results := newRunner(t, f, stage).Run(context.Background(), []*expected.File{file}, "")
 		var skipped []string
 		for _, res := range results {
 			mustPass(t, res)
@@ -924,7 +926,7 @@ func TestEveryResponseIsValidated(t *testing.T) {
 		"checks": [{"name": "query", "query": {"series_id": "activity-index"}, "expected": [{"revision_id": "rev_jan24_1"}]}],
 		"scenarios": [{"name": "scenario", "steps": [{"request": {"path": "/v1/meta"}, "expect": {"status": 200, "body": {"api_version": "v1"}}}]}]
 	}`)
-	results := newRunner(t, f, 1).Run(context.Background(), []*File{file}, "")
+	results := newRunner(t, f, 1).Run(context.Background(), []*expected.File{file}, "")
 	fail := mustFail(t, results[0], 0, "OpenAPI")
 	if !strings.Contains(fail.Actual, "missing property 'missing_reason'") {
 		t.Errorf("query check: actual %s", fail.Actual)
@@ -959,7 +961,7 @@ func TestRunFilterAndProgress(t *testing.T) {
 	r := newRunner(t, f, 1)
 	var progress []string
 	r.Progress = func(res Result) { progress = append(progress, res.String()) }
-	results := r.Run(context.Background(), []*File{file}, "alpha")
+	results := r.Run(context.Background(), []*expected.File{file}, "alpha")
 	want := []string{
 		`test: position check "alpha"`,
 		`test: position check "alphabet"`,

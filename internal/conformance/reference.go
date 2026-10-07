@@ -6,61 +6,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-)
 
-// referencePattern matches a reference, ${<id>.<path>}.
-var referencePattern = regexp.MustCompile(`\$\{([^{}]*)\}`)
+	"github.com/nslaughter/financial-data-api/internal/expected"
+)
 
 // indexPattern matches an array index in a reference's path.
 var indexPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)$`)
-
-// reference is a reference in a string: s[start:end] is ${<id>.<path>}.
-type reference struct {
-	start, end int
-	id         string
-	path       []string
-}
-
-func (r reference) String() string {
-	return "${" + r.id + "." + strings.Join(r.path, ".") + "}"
-}
-
-// findReferences returns the references in s, in order.
-func findReferences(s string) ([]reference, error) {
-	var refs []reference
-	for _, m := range referencePattern.FindAllStringSubmatchIndex(s, -1) {
-		text := s[m[0]:m[1]]
-		id, path, ok := strings.Cut(s[m[2]:m[3]], ".")
-		if !ok || id == "" {
-			return nil, fmt.Errorf("malformed reference %s: want ${<id>.<path>}", text)
-		}
-		r := reference{start: m[0], end: m[1], id: id, path: strings.Split(path, ".")}
-		for _, elem := range r.path {
-			if elem == "" {
-				return nil, fmt.Errorf("malformed reference %s: its path has an empty member name", text)
-			}
-		}
-		refs = append(refs, r)
-	}
-	return refs, nil
-}
-
-// whole reports whether refs, the references in s, are one reference that is
-// all of s. Only such a string resolves to a value that may not be a string.
-func whole(s string, refs []reference) bool {
-	return len(refs) == 1 && refs[0].start == 0 && refs[0].end == len(s)
-}
-
-// wholeReference reports whether v is a string that is exactly one
-// well-formed reference.
-func wholeReference(v any) bool {
-	s, ok := v.(string)
-	if !ok {
-		return false
-	}
-	refs, err := findReferences(s)
-	return err == nil && whole(s, refs)
-}
 
 // bodies holds the parsed JSON body of each request step with an id that has
 // received its response, by id.
@@ -73,19 +24,19 @@ type parsedBody struct {
 }
 
 // lookup returns the value r names.
-func (b bodies) lookup(r reference) (any, error) {
-	body, ok := b[r.id]
+func (b bodies) lookup(r expected.Reference) (any, error) {
+	body, ok := b[r.ID]
 	if !ok {
 		return nil, fmt.Errorf("%s names no step that has run", r)
 	}
 	if body.err != nil {
-		return nil, fmt.Errorf("%s: the body of step %s is not JSON: %v", r, r.id, body.err)
+		return nil, fmt.Errorf("%s: the body of step %s is not JSON: %v", r, r.ID, body.err)
 	}
 	v := body.value
-	for i, elem := range r.path {
-		where := r.id + "." + strings.Join(r.path[:i], ".")
+	for i, elem := range r.Path {
+		where := r.ID + "." + strings.Join(r.Path[:i], ".")
 		if i == 0 {
-			where = "the body of step " + r.id
+			where = "the body of step " + r.ID
 		}
 		switch c := v.(type) {
 		case map[string]any:
@@ -112,17 +63,17 @@ func (b bodies) lookup(r reference) (any, error) {
 // is part of a longer string must name a string or a number, which is
 // inserted as text.
 func (b bodies) resolveString(s string) (any, error) {
-	refs, err := findReferences(s)
+	refs, err := expected.FindReferences(s)
 	if err != nil || len(refs) == 0 {
 		return s, err
 	}
-	if whole(s, refs) {
+	if expected.Whole(s, refs) {
 		return b.lookup(refs[0])
 	}
 	var sb strings.Builder
 	last := 0
 	for _, r := range refs {
-		sb.WriteString(s[last:r.start])
+		sb.WriteString(s[last:r.Start])
 		v, err := b.lookup(r)
 		if err != nil {
 			return nil, err
@@ -135,7 +86,7 @@ func (b bodies) resolveString(s string) (any, error) {
 		default:
 			return nil, fmt.Errorf("%s is part of a longer string, so it must name a string or a number, not %s", r, jsonType(v))
 		}
-		last = r.end
+		last = r.End
 	}
 	sb.WriteString(s[last:])
 	return sb.String(), nil

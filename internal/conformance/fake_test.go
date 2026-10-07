@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	financialdataapi "github.com/nslaughter/financial-data-api"
+	"github.com/nslaughter/financial-data-api/internal/expected"
 	"github.com/nslaughter/financial-data-api/internal/fixtures"
 )
 
@@ -61,7 +62,7 @@ func revisionRecords(t *testing.T) []map[string]any {
 		t.Fatal(err)
 	}
 	var records []map[string]any
-	if err := decodeJSON(data, &records); err != nil {
+	if err := expected.Decode(data, &records); err != nil {
 		t.Fatal(err)
 	}
 	return records
@@ -217,9 +218,9 @@ func newRunner(t *testing.T, f *fake, stage int) *Runner {
 }
 
 // parse parses text as a file of expected/ named "test".
-func parse(t *testing.T, text string) *File {
+func parse(t *testing.T, text string) *expected.File {
 	t.Helper()
-	f, err := ParseFile("test", []byte(text))
+	f, err := expected.ParseFile("test", []byte(text))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,9 +228,9 @@ func parse(t *testing.T, text string) *File {
 }
 
 // runOne runs a file that holds one check and returns its result.
-func runOne(t *testing.T, r *Runner, f *File) Result {
+func runOne(t *testing.T, r *Runner, f *expected.File) Result {
 	t.Helper()
-	results := r.Run(context.Background(), []*File{f}, "")
+	results := r.Run(context.Background(), []*expected.File{f}, "")
 	if len(results) != 1 {
 		t.Fatalf("got %d results, want 1: %v", len(results), results)
 	}

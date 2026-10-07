@@ -1,4 +1,10 @@
-package conformance
+// Package expected owns the format of expected/, which spec/conformance.md
+// defines: the file types, loading the files built into the module, their
+// well-formedness checks, the matching rule, and the values the
+// specification gives for running the checks. It has no HTTP, so the
+// conformance runner and the tests of internal/history read the files the
+// same way.
+package expected
 
 import (
 	"bytes"
@@ -8,11 +14,27 @@ import (
 	"io"
 	"io/fs"
 	"strings"
+
+	financialdataapi "github.com/nslaughter/financial-data-api"
 )
 
-// timingFile is the file whose checks are release-timing checks. Every other
+// The values spec/conformance.md gives for running the checks.
+const (
+	// DefaultCredential is the credential a request uses unless its check
+	// names another.
+	DefaultCredential = "cred_research"
+	// StreamDataset is the dataset whose head position and change stream
+	// the checks of change-stream.json read.
+	StreamDataset = "core-indicators"
+	// TimingSeries is the series whose releases release-timing.json checks.
+	TimingSeries = "activity-index"
+	// PageSize is the page size of pages_with_page_size_10.
+	PageSize = 10
+)
+
+// TimingFile is the file whose checks are release-timing checks. Every other
 // file's checks are query checks.
-const timingFile = "release-timing"
+const TimingFile = "release-timing"
 
 // timingMembers are the values a release-timing check computes, which its
 // expected object may name.
@@ -26,17 +48,19 @@ var timingMembers = map[string]bool{
 }
 
 // File is a file of expected/. Files are decoded strictly: a member that
-// spec/conformance.md does not define is an error, so the runner never skips
+// spec/conformance.md does not define is an error, so a runner never skips
 // a check it does not understand.
 type File struct {
 	// Name is the file name without .json, such as "full-history".
-	Name           string
-	QueryChecks    []QueryCheck
-	Pages          []ExpectedPage
-	PositionChecks []PositionCheck
-	ReadChecks     []ReadCheck
-	TimingChecks   []TimingCheck
-	Scenarios      []Scenario
+	Name string
+	// ContractVersion is the file's contract_version.
+	ContractVersion string
+	QueryChecks     []QueryCheck
+	Pages           []ExpectedPage
+	PositionChecks  []PositionCheck
+	ReadChecks      []ReadCheck
+	TimingChecks    []TimingCheck
+	Scenarios       []Scenario
 }
 
 // rawFile is a file's members as they are written.
@@ -60,10 +84,10 @@ type QueryCheck struct {
 	Reason   string             `json:"reason"`
 	Clock    *string            `json:"clock"`
 	Query    map[string]*string `json:"query"`
-	Expected value              `json:"expected"`
+	Expected Member             `json:"expected"`
 	// ContrastAvailableAsOf, when present, is what the same query returns
 	// with available_as_of in place of published_as_of.
-	ContrastAvailableAsOf value `json:"contrast_available_as_of"`
+	ContrastAvailableAsOf Member `json:"contrast_available_as_of"`
 }
 
 // ExpectedPage is an entry of pages_with_page_size_10: one page of the
@@ -79,7 +103,7 @@ type PositionCheck struct {
 	Name             string `json:"name"`
 	Reason           string `json:"reason"`
 	At               string `json:"at"`
-	ExpectedPosition value  `json:"expected_position"`
+	ExpectedPosition Member `json:"expected_position"`
 }
 
 // ReadCheck is an entry of read_checks.
@@ -89,9 +113,9 @@ type ReadCheck struct {
 	Clock                *string      `json:"clock"`
 	AfterPosition        json.Number  `json:"after_position"`
 	Limit                *json.Number `json:"limit"`
-	Expected             value        `json:"expected"`
-	ExpectedNextPosition value        `json:"expected_next_position"`
-	ExpectedHeadPosition value        `json:"expected_head_position"`
+	Expected             Member       `json:"expected"`
+	ExpectedNextPosition Member       `json:"expected_next_position"`
+	ExpectedHeadPosition Member       `json:"expected_head_position"`
 }
 
 // TimingCheck is an entry of the checks of release-timing.json.
@@ -132,9 +156,9 @@ type Request struct {
 	Method        *string        `json:"method"`
 	Path          *string        `json:"path"`
 	Query         map[string]any `json:"query"`
-	Credential    value          `json:"credential"`
+	Credential    Member         `json:"credential"`
 	Authorization *string        `json:"authorization"`
-	Body          value          `json:"body"`
+	Body          Member         `json:"body"`
 }
 
 // Expect is what a request step's response must meet. Its strings may hold
@@ -142,30 +166,31 @@ type Request struct {
 // is exactly one reference may stand for a value of any type, so Status and
 // BodyLines may be such strings as well as an integer and an array.
 type Expect struct {
-	Status     value             `json:"status"`
+	Status     Member            `json:"status"`
 	Code       *string           `json:"code"`
-	Body       value             `json:"body"`
+	Body       Member            `json:"body"`
 	Headers    map[string]string `json:"headers"`
 	BodySHA256 *string           `json:"body_sha256"`
-	BodyLines  value             `json:"body_lines"`
+	BodyLines  Member            `json:"body_lines"`
 }
 
-// value is a JSON value that records whether its member was present, so an
-// absent member differs from null. Numbers are json.Number, objects
-// map[string]any, and arrays []any.
-type value struct {
-	set bool
-	v   any
+// Member is an object member that may be absent: whether it was present, so
+// that an absent member differs from null, and its JSON value as Decode
+// decodes it.
+type Member struct {
+	Present bool
+	Value   any
 }
 
-func (v *value) UnmarshalJSON(data []byte) error {
-	v.set = true
-	return decodeJSON(data, &v.v)
+func (m *Member) UnmarshalJSON(data []byte) error {
+	m.Present = true
+	return Decode(data, &m.Value)
 }
 
-// decodeJSON decodes data into v, with json.Number for numbers, refusing
-// object members that v does not define and data after the value.
-func decodeJSON(data []byte, v any) error {
+// Decode decodes the JSON value data into v as Match compares JSON values,
+// with json.Number for numbers, refusing object members that v does not
+// define and data after the value.
+func Decode(data []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
 	dec.DisallowUnknownFields()
@@ -178,9 +203,10 @@ func decodeJSON(data []byte, v any) error {
 	return nil
 }
 
-// Load reads every file of expected/ from fsys, in name order, and checks
-// that each is a well-formed conformance file.
-func Load(fsys fs.FS) ([]*File, error) {
+// Load reads every file of expected/ from financialdataapi.Expected(), in
+// name order, and checks that each is a well-formed conformance file.
+func Load() ([]*File, error) {
+	fsys := financialdataapi.Expected()
 	names, err := fs.Glob(fsys, "*.json")
 	if err != nil {
 		return nil, err
@@ -207,22 +233,23 @@ func Load(fsys fs.FS) ([]*File, error) {
 // checks that it is well formed.
 func ParseFile(name string, data []byte) (*File, error) {
 	var raw rawFile
-	if err := decodeJSON(data, &raw); err != nil {
+	if err := Decode(data, &raw); err != nil {
 		return nil, err
 	}
 	f := &File{
-		Name:           name,
-		Pages:          raw.Pages,
-		PositionChecks: raw.PositionChecks,
-		ReadChecks:     raw.ReadChecks,
-		Scenarios:      raw.Scenarios,
+		Name:            name,
+		ContractVersion: raw.ContractVersion,
+		Pages:           raw.Pages,
+		PositionChecks:  raw.PositionChecks,
+		ReadChecks:      raw.ReadChecks,
+		Scenarios:       raw.Scenarios,
 	}
 	if raw.Checks != nil {
 		checks := any(&f.QueryChecks)
-		if name == timingFile {
+		if name == TimingFile {
 			checks = &f.TimingChecks
 		}
-		if err := decodeJSON(raw.Checks, checks); err != nil {
+		if err := Decode(raw.Checks, checks); err != nil {
 			return nil, fmt.Errorf("checks: %w", err)
 		}
 	}
@@ -248,12 +275,12 @@ func (f *File) check() error {
 		}
 	}
 	for _, c := range f.PositionChecks {
-		if c.Name == "" || c.At == "" || !c.ExpectedPosition.set {
+		if c.Name == "" || c.At == "" || !c.ExpectedPosition.Present {
 			return fmt.Errorf("position check %q: needs name, at, and expected_position", c.Name)
 		}
 	}
 	for _, c := range f.ReadChecks {
-		if c.Name == "" || c.AfterPosition == "" || !c.Expected.set || !c.ExpectedNextPosition.set || !c.ExpectedHeadPosition.set {
+		if c.Name == "" || c.AfterPosition == "" || !c.Expected.Present || !c.ExpectedNextPosition.Present || !c.ExpectedHeadPosition.Present {
 			return fmt.Errorf("read check %q: needs name, after_position, expected, expected_next_position, and expected_head_position", c.Name)
 		}
 	}
@@ -276,10 +303,10 @@ func (f *File) check() error {
 }
 
 func (c *QueryCheck) check() error {
-	if c.Name == "" || c.Query == nil || !c.Expected.set {
+	if c.Name == "" || c.Query == nil || !c.Expected.Present {
 		return errors.New("needs name, query, and expected")
 	}
-	if c.ContrastAvailableAsOf.set && c.Query["published_as_of"] == nil {
+	if c.ContrastAvailableAsOf.Present && c.Query["published_as_of"] == nil {
 		return errors.New("contrast_available_as_of needs a query with published_as_of")
 	}
 	return nil
@@ -374,8 +401,8 @@ func (r *Request) check() error {
 			return fmt.Errorf("query parameter %s: must be a string, null, or an array of strings", k)
 		}
 	}
-	if r.Credential.set {
-		switch r.Credential.v.(type) {
+	if r.Credential.Present {
+		switch r.Credential.Value.(type) {
 		case string, nil:
 		default:
 			return errors.New("credential must be a string or null")
@@ -385,15 +412,15 @@ func (r *Request) check() error {
 }
 
 func (e *Expect) check() error {
-	if !e.Status.set {
+	if !e.Status.Present {
 		return errors.New("needs a status")
 	}
-	n, isNumber := e.Status.v.(json.Number)
-	if _, isInt := integer(n); !(isNumber && isInt) && !wholeReference(e.Status.v) {
+	n, isNumber := e.Status.Value.(json.Number)
+	if _, isInt := Integer(n); !(isNumber && isInt) && !wholeReference(e.Status.Value) {
 		return errors.New("status must be an integer or a string that is exactly one reference")
 	}
-	if e.BodyLines.set {
-		if _, ok := e.BodyLines.v.([]any); !ok && !wholeReference(e.BodyLines.v) {
+	if e.BodyLines.Present {
+		if _, ok := e.BodyLines.Value.([]any); !ok && !wholeReference(e.BodyLines.Value) {
 			return errors.New("body_lines must be an array or a string that is exactly one reference")
 		}
 	}
@@ -409,27 +436,27 @@ func (r *Request) strings() []string {
 	for _, k := range sortedKeys(r.Query) {
 		ss = appendStrings(ss, r.Query[k])
 	}
-	ss = appendStrings(ss, r.Credential.v)
+	ss = appendStrings(ss, r.Credential.Value)
 	if r.Authorization != nil {
 		ss = append(ss, *r.Authorization)
 	}
-	return appendStrings(ss, r.Body.v)
+	return appendStrings(ss, r.Body.Value)
 }
 
 // strings returns every string in the expectation that may hold a reference.
 func (e *Expect) strings() []string {
-	ss := appendStrings(nil, e.Status.v)
+	ss := appendStrings(nil, e.Status.Value)
 	if e.Code != nil {
 		ss = append(ss, *e.Code)
 	}
-	ss = appendStrings(ss, e.Body.v)
+	ss = appendStrings(ss, e.Body.Value)
 	for _, k := range sortedKeys(e.Headers) {
 		ss = append(ss, e.Headers[k])
 	}
 	if e.BodySHA256 != nil {
 		ss = append(ss, *e.BodySHA256)
 	}
-	return appendStrings(ss, e.BodyLines.v)
+	return appendStrings(ss, e.BodyLines.Value)
 }
 
 // appendStrings appends the strings in v, a JSON value, to ss.
@@ -453,12 +480,12 @@ func appendStrings(ss []string, v any) []string {
 // step not in ids.
 func checkReferences(ss []string, ids map[string]bool) error {
 	for _, s := range ss {
-		refs, err := findReferences(s)
+		refs, err := FindReferences(s)
 		if err != nil {
 			return err
 		}
 		for _, r := range refs {
-			if !ids[r.id] {
+			if !ids[r.ID] {
 				return fmt.Errorf("%s names no earlier request step", r)
 			}
 		}

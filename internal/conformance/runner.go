@@ -21,27 +21,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nslaughter/financial-data-api/internal/expected"
 	"github.com/nslaughter/financial-data-api/internal/fixtures"
 )
 
 const (
-	// defaultCredential is the credential a request uses unless it names
-	// another.
-	defaultCredential = "cred_research"
-	// testControlKind is the kind of the credential that test actions use.
-	testControlKind = "test_control"
-	// streamDataset is the dataset whose head position and change stream
-	// the checks of change-stream.json read.
-	streamDataset = "core-indicators"
-	// timingSeries is the series whose releases release-timing.json checks.
-	timingSeries = "activity-index"
-	// pageSize is the page size of pages_with_page_size_10.
-	pageSize = "10"
 	// maxPages is the most pages the runner follows for one query, so a
 	// server whose tokens never end cannot hold it forever.
 	maxPages = 1000
-	// timestampLayout is the timestamp format of spec/api.md.
-	timestampLayout = "2006-01-02T15:04:05Z"
 	// defaultTimeout is how long a request may take when Config sets no
 	// timeout.
 	defaultTimeout = 30 * time.Second
@@ -101,7 +88,7 @@ func New(cfg Config) (*Runner, error) {
 	}
 	for _, c := range cfg.Credentials {
 		r.keys[c.CredentialID] = c.APIKey
-		if c.Kind == testControlKind {
+		if c.Kind == fixtures.TestControlKind {
 			if r.testKey != "" {
 				return nil, errors.New("more than one test-control credential")
 			}
@@ -111,8 +98,8 @@ func New(cfg Config) (*Runner, error) {
 	if r.testKey == "" {
 		return nil, errors.New("no test-control credential")
 	}
-	if _, ok := r.keys[defaultCredential]; !ok {
-		return nil, fmt.Errorf("no credential %s, which requests use by default", defaultCredential)
+	if _, ok := r.keys[expected.DefaultCredential]; !ok {
+		return nil, fmt.Errorf("no credential %s, which requests use by default", expected.DefaultCredential)
 	}
 	return r, nil
 }
@@ -123,7 +110,7 @@ func New(cfg Config) (*Runner, error) {
 // all; filter does not choose files, which Select does. A scenario that does
 // not run at the runner's stage is reported as skipped. Each check starts
 // with a reset, so the checks are independent.
-func (r *Runner) Run(ctx context.Context, files []*File, filter string) []Result {
+func (r *Runner) Run(ctx context.Context, files []*expected.File, filter string) []Result {
 	var results []Result
 	report := func(res Result) {
 		results = append(results, res)
@@ -131,7 +118,7 @@ func (r *Runner) Run(ctx context.Context, files []*File, filter string) []Result
 			r.Progress(res)
 		}
 	}
-	run := func(f *File, kind, name string, check func(*checkRun) *Failure) {
+	run := func(f *expected.File, kind, name string, check func(*checkRun) *Failure) {
 		if strings.Contains(name, filter) && ctx.Err() == nil {
 			report(Result{File: f.Name, Kind: kind, Name: name, Failure: check(&checkRun{Runner: r, ctx: ctx})})
 		}
@@ -161,7 +148,7 @@ func (r *Runner) Run(ctx context.Context, files []*File, filter string) []Result
 		}
 		for i := range f.Scenarios {
 			s := &f.Scenarios[i]
-			if !s.runsAt(r.stage) {
+			if !runsAt(s, r.stage) {
 				if strings.Contains(s.Name, filter) && ctx.Err() == nil {
 					report(Result{File: f.Name, Kind: "scenario", Name: s.Name, Skipped: true})
 				}
@@ -181,17 +168,17 @@ type checkRun struct {
 	step int
 }
 
-func (x *checkRun) fail(c call, at, expected, actual string) *Failure {
-	return &Failure{Step: x.step, Request: c.String(), At: at, Expected: expected, Actual: actual}
+func (x *checkRun) fail(c call, at, want, got string) *Failure {
+	return &Failure{Step: x.step, Request: c.String(), At: at, Expected: want, Actual: got}
 }
 
-func (x *checkRun) differs(c call, d *difference) *Failure {
-	return x.fail(c, d.at, d.expected, d.actual)
+func (x *checkRun) differs(c call, d *expected.Difference) *Failure {
+	return x.fail(c, d.At, d.Expected, d.Actual)
 }
 
 // customer returns a request with the default credential.
 func (x *checkRun) customer(path string, query url.Values) call {
-	return call{method: http.MethodGet, path: path, query: query, authorization: bearer(x.keys[defaultCredential])}
+	return call{method: http.MethodGet, path: path, query: query, authorization: bearer(x.keys[expected.DefaultCredential])}
 }
 
 func bearer(key string) *string {
@@ -230,12 +217,12 @@ func (x *checkRun) get(c call) (map[string]any, *Failure) {
 		return nil, f
 	}
 	var body any
-	if err := decodeJSON(e.body, &body); err != nil {
+	if err := expected.Decode(e.body, &body); err != nil {
 		return nil, x.fail(c, "body", "JSON", err.Error())
 	}
 	obj, ok := body.(map[string]any)
 	if !ok {
-		return nil, x.fail(c, "body", "an object", render(body))
+		return nil, x.fail(c, "body", "an object", expected.Render(body))
 	}
 	return obj, nil
 }
@@ -282,7 +269,7 @@ func (x *checkRun) pages(path string, query url.Values) ([][]any, *Failure) {
 		}
 		data, ok := body["data"].([]any)
 		if !ok {
-			return nil, x.fail(c, "body.data", "an array", render(body["data"]))
+			return nil, x.fail(c, "body.data", "an array", expected.Render(body["data"]))
 		}
 		pages = append(pages, data)
 		switch token := body["next_page_token"].(type) {
@@ -292,14 +279,14 @@ func (x *checkRun) pages(path string, query url.Values) ([][]any, *Failure) {
 			q = clone(query)
 			q.Set("page_token", token)
 		default:
-			return nil, x.fail(c, "body.next_page_token", "a string or null", render(token))
+			return nil, x.fail(c, "body.next_page_token", "a string or null", expected.Render(token))
 		}
 	}
 }
 
 // compareAll queries GET /v1/observations, concatenates every page's data,
-// and matches it against expected.
-func (x *checkRun) compareAll(query url.Values, expected any) *Failure {
+// and matches it against want.
+func (x *checkRun) compareAll(query url.Values, want any) *Failure {
 	const path = "/v1/observations"
 	pages, f := x.pages(path, query)
 	if f != nil {
@@ -309,7 +296,7 @@ func (x *checkRun) compareAll(query url.Values, expected any) *Failure {
 	for _, p := range pages {
 		data = append(data, p...)
 	}
-	if d := match("data", expected, data); d != nil {
+	if d := expected.Match("data", want, data); d != nil {
 		f := x.differs(x.customer(path, query), d)
 		f.Request += ", every page"
 		return f
@@ -317,25 +304,25 @@ func (x *checkRun) compareAll(query url.Values, expected any) *Failure {
 	return nil
 }
 
-func (x *checkRun) queryCheck(c *QueryCheck) *Failure {
+func (x *checkRun) queryCheck(c *expected.QueryCheck) *Failure {
 	if f := x.reset(c.Clock); f != nil {
 		return f
 	}
-	query := c.query()
-	if f := x.compareAll(query, c.Expected.v); f != nil {
+	query := queryOf(c)
+	if f := x.compareAll(query, c.Expected.Value); f != nil {
 		return f
 	}
-	if !c.ContrastAvailableAsOf.set {
+	if !c.ContrastAvailableAsOf.Present {
 		return nil
 	}
 	contrast := clone(query)
 	contrast.Del("published_as_of")
 	contrast.Set("available_as_of", *c.Query["published_as_of"])
-	return x.compareAll(contrast, c.ContrastAvailableAsOf.v)
+	return x.compareAll(contrast, c.ContrastAvailableAsOf.Value)
 }
 
-// query returns the check's query parameters, omitting null members.
-func (c *QueryCheck) query() url.Values {
+// queryOf returns a query check's query parameters, omitting null members.
+func queryOf(c *expected.QueryCheck) url.Values {
 	q := url.Values{}
 	for k, v := range c.Query {
 		if v != nil {
@@ -347,13 +334,13 @@ func (c *QueryCheck) query() url.Values {
 
 // pageCheck runs a query check with page_size=10 and compares its pages with
 // pages_with_page_size_10.
-func (x *checkRun) pageCheck(c *QueryCheck, want []ExpectedPage) *Failure {
+func (x *checkRun) pageCheck(c *expected.QueryCheck, want []expected.ExpectedPage) *Failure {
 	if f := x.reset(c.Clock); f != nil {
 		return f
 	}
 	const path = "/v1/observations"
-	query := c.query()
-	query.Set("page_size", pageSize)
+	query := queryOf(c)
+	query.Set("page_size", strconv.Itoa(expected.PageSize))
 	pages, f := x.pages(path, query)
 	if f != nil {
 		return f
@@ -365,10 +352,10 @@ func (x *checkRun) pageCheck(c *QueryCheck, want []ExpectedPage) *Failure {
 		if len(page) != w.Count {
 			return x.fail(first, at, fmt.Sprintf("%d records", w.Count), fmt.Sprintf("%d records", len(page)))
 		}
-		if d := match(at+", first record", map[string]any{"observation_id": w.First}, page[0]); d != nil {
+		if d := expected.Match(at+", first record", map[string]any{"observation_id": w.First}, page[0]); d != nil {
 			return x.differs(first, d)
 		}
-		if d := match(at+", last record", map[string]any{"observation_id": w.Last}, page[len(page)-1]); d != nil {
+		if d := expected.Match(at+", last record", map[string]any{"observation_id": w.Last}, page[len(page)-1]); d != nil {
 			return x.differs(first, d)
 		}
 	}
@@ -378,22 +365,22 @@ func (x *checkRun) pageCheck(c *QueryCheck, want []ExpectedPage) *Failure {
 	return nil
 }
 
-func (x *checkRun) positionCheck(c *PositionCheck) *Failure {
+func (x *checkRun) positionCheck(c *expected.PositionCheck) *Failure {
 	if f := x.reset(&c.At); f != nil {
 		return f
 	}
-	req := x.customer("/v1/datasets/"+streamDataset, nil)
+	req := x.customer("/v1/datasets/"+expected.StreamDataset, nil)
 	body, f := x.get(req)
 	if f != nil {
 		return f
 	}
-	if d := match("body", map[string]any{"head_position": c.ExpectedPosition.v}, body); d != nil {
+	if d := expected.Match("body", map[string]any{"head_position": c.ExpectedPosition.Value}, body); d != nil {
 		return x.differs(req, d)
 	}
 	return nil
 }
 
-func (x *checkRun) readCheck(c *ReadCheck) *Failure {
+func (x *checkRun) readCheck(c *expected.ReadCheck) *Failure {
 	if f := x.reset(c.Clock); f != nil {
 		return f
 	}
@@ -401,17 +388,17 @@ func (x *checkRun) readCheck(c *ReadCheck) *Failure {
 	if c.Limit != nil {
 		query.Set("limit", c.Limit.String())
 	}
-	req := x.customer("/v1/datasets/"+streamDataset+"/changes", query)
+	req := x.customer("/v1/datasets/"+expected.StreamDataset+"/changes", query)
 	body, f := x.get(req)
 	if f != nil {
 		return f
 	}
-	expected := map[string]any{
-		"data":          c.Expected.v,
-		"next_position": c.ExpectedNextPosition.v,
-		"head_position": c.ExpectedHeadPosition.v,
+	want := map[string]any{
+		"data":          c.Expected.Value,
+		"next_position": c.ExpectedNextPosition.Value,
+		"head_position": c.ExpectedHeadPosition.Value,
 	}
-	if d := match("body", expected, body); d != nil {
+	if d := expected.Match("body", want, body); d != nil {
 		return x.differs(req, d)
 	}
 	return nil
@@ -419,11 +406,11 @@ func (x *checkRun) readCheck(c *ReadCheck) *Failure {
 
 // timingCheck computes a release's timing from the release calendar and the
 // revision history, at the default clock.
-func (x *checkRun) timingCheck(c *TimingCheck) *Failure {
+func (x *checkRun) timingCheck(c *expected.TimingCheck) *Failure {
 	if f := x.reset(nil); f != nil {
 		return f
 	}
-	calendar := x.customer("/v1/release-calendar", url.Values{"series_id": {timingSeries}, "period_start": {c.PeriodStart}})
+	calendar := x.customer("/v1/release-calendar", url.Values{"series_id": {expected.TimingSeries}, "period_start": {c.PeriodStart}})
 	body, f := x.get(calendar)
 	if f != nil {
 		return f
@@ -436,14 +423,14 @@ func (x *checkRun) timingCheck(c *TimingCheck) *Failure {
 		}
 	}
 	if len(entries) != 1 {
-		return x.fail(calendar, "body.data", "one entry whose period_start is "+c.PeriodStart, render(data))
+		return x.fail(calendar, "body.data", "one entry whose period_start is "+c.PeriodStart, expected.Render(data))
 	}
 	scheduledAt, ok1 := entries[0]["scheduled_at"].(string)
 	periodEnd, ok2 := entries[0]["period_end"].(string)
 	if !ok1 || !ok2 {
-		return x.fail(calendar, "body.data", "an entry with scheduled_at and period_end", render(entries[0]))
+		return x.fail(calendar, "body.data", "an entry with scheduled_at and period_end", expected.Render(entries[0]))
 	}
-	query := url.Values{"series_id": {timingSeries}, "period_start": {c.PeriodStart}, "period_end": {periodEnd}}
+	query := url.Values{"series_id": {expected.TimingSeries}, "period_start": {c.PeriodStart}, "period_end": {periodEnd}}
 	pages, f := x.pages("/v1/revisions", query)
 	if f != nil {
 		return f
@@ -457,7 +444,7 @@ func (x *checkRun) timingCheck(c *TimingCheck) *Failure {
 	if err != nil {
 		return x.fail(revisions, "body.data", "revisions to time the release by", err.Error())
 	}
-	if d := match("", c.Expected, computed); d != nil {
+	if d := expected.Match("", c.Expected, computed); d != nil {
 		f := x.differs(revisions, d)
 		f.Request += ", every page"
 		return f
@@ -468,7 +455,7 @@ func (x *checkRun) timingCheck(c *TimingCheck) *Failure {
 // timing computes the values a release-timing check compares, from the
 // release's scheduled_at and its revisions.
 func timing(scheduledAt string, revisions []any) (map[string]any, error) {
-	scheduled, err := time.Parse(timestampLayout, scheduledAt)
+	scheduled, err := time.Parse(fixtures.TimestampLayout, scheduledAt)
 	if err != nil {
 		return nil, fmt.Errorf("scheduled_at: %w", err)
 	}
@@ -491,12 +478,12 @@ func timing(scheduledAt string, revisions []any) (map[string]any, error) {
 		availText, _ := rec["available_at"].(string)
 		id, _ := rec["revision_id"].(string)
 		seqText, _ := rec["sequence"].(json.Number)
-		pub, err1 := time.Parse(timestampLayout, pubText)
-		avail, err2 := time.Parse(timestampLayout, availText)
+		pub, err1 := time.Parse(fixtures.TimestampLayout, pubText)
+		avail, err2 := time.Parse(fixtures.TimestampLayout, availText)
 		// The sequence is compared by value, however it is written.
-		seq, isInt := integer(seqText)
+		seq, isInt := expected.Integer(seqText)
 		if err := errors.Join(err1, err2); err != nil || !isInt || id == "" {
-			return nil, fmt.Errorf("revision %d needs an integer sequence, revision_id, published_at, and available_at: %s", i, render(rec))
+			return nil, fmt.Errorf("revision %d needs an integer sequence, revision_id, published_at, and available_at: %s", i, expected.Render(rec))
 		}
 		if i == 0 || pub.Before(published.t) {
 			published = instant{pubText, pub}
@@ -519,7 +506,7 @@ func timing(scheduledAt string, revisions []any) (map[string]any, error) {
 	}, nil
 }
 
-func (x *checkRun) scenario(s *Scenario) *Failure {
+func (x *checkRun) scenario(s *expected.Scenario) *Failure {
 	if f := x.reset(s.Clock); f != nil {
 		return f
 	}
@@ -533,7 +520,7 @@ func (x *checkRun) scenario(s *Scenario) *Failure {
 	return nil
 }
 
-func (x *checkRun) runStep(st *Step, b bodies) *Failure {
+func (x *checkRun) runStep(st *expected.Step, b bodies) *Failure {
 	switch {
 	case st.SetClock != nil:
 		return x.testAction(http.MethodPut, "/test/clock", map[string]any{"now": *st.SetClock})
@@ -555,7 +542,7 @@ func (x *checkRun) runStep(st *Step, b bodies) *Failure {
 
 // requestStep sends a request step's request and checks the response
 // against its expect and the OpenAPI document.
-func (x *checkRun) requestStep(st *Step, b bodies) *Failure {
+func (x *checkRun) requestStep(st *expected.Step, b bodies) *Failure {
 	c, err := x.build(st.Request, b)
 	if err != nil {
 		return &Failure{Step: x.step, Request: c.method + " " + *st.Request.Path, At: "references", Expected: "every reference resolved", Actual: err.Error()}
@@ -566,7 +553,7 @@ func (x *checkRun) requestStep(st *Step, b bodies) *Failure {
 	}
 	if st.ID != nil {
 		var body any
-		err := decodeJSON(e.body, &body)
+		err := expected.Decode(e.body, &body)
 		b[*st.ID] = parsedBody{value: body, err: err}
 	}
 	if f := x.meets(e, st.Expect, b); f != nil {
@@ -576,7 +563,7 @@ func (x *checkRun) requestStep(st *Step, b bodies) *Failure {
 }
 
 // build resolves a request's references and returns the request to send.
-func (x *checkRun) build(req *Request, b bodies) (call, error) {
+func (x *checkRun) build(req *expected.Request, b bodies) (call, error) {
 	c := call{method: http.MethodGet, query: url.Values{}}
 	if req.Method != nil {
 		// A report of a reference that fails shows the method as written.
@@ -637,13 +624,13 @@ func (x *checkRun) build(req *Request, b bodies) (call, error) {
 			return c, err
 		}
 		c.authorization = &auth
-	case !req.Credential.set:
-		c.authorization = bearer(x.keys[defaultCredential])
+	case !req.Credential.Present:
+		c.authorization = bearer(x.keys[expected.DefaultCredential])
 	default:
 		// The credential is resolved before its type is known, because a
 		// string that is exactly one reference may stand for null, which
 		// sends no Authorization header.
-		cred, err := b.resolve(req.Credential.v)
+		cred, err := b.resolve(req.Credential.Value)
 		if err != nil {
 			return c, err
 		}
@@ -656,11 +643,11 @@ func (x *checkRun) build(req *Request, b bodies) (call, error) {
 			}
 			c.authorization = bearer(key)
 		default:
-			return c, fmt.Errorf("credential %s is %s after resolving references; it must be a string or null", render(req.Credential.v), jsonType(cred))
+			return c, fmt.Errorf("credential %s is %s after resolving references; it must be a string or null", expected.Render(req.Credential.Value), jsonType(cred))
 		}
 	}
-	if req.Body.set {
-		body, err := b.resolve(req.Body.v)
+	if req.Body.Present {
+		body, err := b.resolve(req.Body.Value)
 		if err != nil {
 			return c, err
 		}
@@ -676,19 +663,19 @@ func (x *checkRun) build(req *Request, b bodies) (call, error) {
 // body_lines. It resolves each member's references just before checking
 // that member, so a reference to the step's own body cannot hide an earlier
 // difference, such as an error status whose body is a problem.
-func (x *checkRun) meets(e *exchange, exp *Expect, b bodies) *Failure {
+func (x *checkRun) meets(e *exchange, exp *expected.Expect, b bodies) *Failure {
 	unresolved := func(err error) *Failure {
 		return x.fail(e.call, "references", "every reference resolved", err.Error())
 	}
-	status, err := b.resolve(exp.Status.v)
+	status, err := b.resolve(exp.Status.Value)
 	if err != nil {
 		return unresolved(err)
 	}
 	wantStatus, ok := status.(json.Number)
 	if !ok {
-		return unresolved(fmt.Errorf("status %s is %s after resolving references; it must be a number", render(exp.Status.v), jsonType(status)))
+		return unresolved(fmt.Errorf("status %s is %s after resolving references; it must be a number", expected.Render(exp.Status.Value), jsonType(status)))
 	}
-	if !equalNumbers(wantStatus, json.Number(strconv.Itoa(e.status))) {
+	if expected.Match("status", wantStatus, json.Number(strconv.Itoa(e.status))) != nil {
 		return x.fail(e.call, "status", wantStatus.String(), e.statusLine())
 	}
 	if exp.Code != nil {
@@ -697,27 +684,27 @@ func (x *checkRun) meets(e *exchange, exp *Expect, b bodies) *Failure {
 			return unresolved(err)
 		}
 		if mt := mediaType(e.header.Get("Content-Type")); mt != "application/problem+json" {
-			return x.fail(e.call, "header Content-Type", "application/problem+json", render(e.header.Get("Content-Type")))
+			return x.fail(e.call, "header Content-Type", "application/problem+json", expected.Render(e.header.Get("Content-Type")))
 		}
 		var body any
-		if err := decodeJSON(e.body, &body); err != nil {
-			return x.fail(e.call, "body", "a problem", "not JSON: "+shorten(string(e.body)))
+		if err := expected.Decode(e.body, &body); err != nil {
+			return x.fail(e.call, "body", "a problem", "not JSON: "+expected.Shorten(string(e.body)))
 		}
 		problem := map[string]any{"code": code, "status": json.Number(strconv.Itoa(e.status))}
-		if d := match("body", problem, body); d != nil {
+		if d := expected.Match("body", problem, body); d != nil {
 			return x.differs(e.call, d)
 		}
 	}
-	if exp.Body.set {
-		want, err := b.resolve(exp.Body.v)
+	if exp.Body.Present {
+		want, err := b.resolve(exp.Body.Value)
 		if err != nil {
 			return unresolved(err)
 		}
 		var body any
-		if err := decodeJSON(e.body, &body); err != nil {
-			return x.fail(e.call, "body", render(want), "not JSON: "+shorten(string(e.body)))
+		if err := expected.Decode(e.body, &body); err != nil {
+			return x.fail(e.call, "body", expected.Render(want), "not JSON: "+expected.Shorten(string(e.body)))
 		}
-		if d := match("body", want, body); d != nil {
+		if d := expected.Match("body", want, body); d != nil {
 			return x.differs(e.call, d)
 		}
 	}
@@ -728,15 +715,15 @@ func (x *checkRun) meets(e *exchange, exp *Expect, b bodies) *Failure {
 		}
 		values := e.header.Values(name)
 		if len(values) == 0 {
-			return x.fail(e.call, "header "+name, render(want), "no header")
+			return x.fail(e.call, "header "+name, expected.Render(want), "no header")
 		}
 		got := strings.Join(values, ", ")
 		if strings.EqualFold(name, "Content-Type") {
 			if mediaType(got) != mediaType(want) {
-				return x.fail(e.call, "header "+name, render(want), render(got))
+				return x.fail(e.call, "header "+name, expected.Render(want), expected.Render(got))
 			}
 		} else if got != want {
-			return x.fail(e.call, "header "+name, render(want), render(got))
+			return x.fail(e.call, "header "+name, expected.Render(want), expected.Render(got))
 		}
 	}
 	if exp.BodySHA256 != nil {
@@ -749,19 +736,19 @@ func (x *checkRun) meets(e *exchange, exp *Expect, b bodies) *Failure {
 			return x.fail(e.call, "body_sha256", want, got)
 		}
 	}
-	if exp.BodyLines.set {
-		want, err := b.resolve(exp.BodyLines.v)
+	if exp.BodyLines.Present {
+		want, err := b.resolve(exp.BodyLines.Value)
 		if err != nil {
 			return unresolved(err)
 		}
 		if _, ok := want.([]any); !ok {
-			return unresolved(fmt.Errorf("body_lines %s is %s after resolving references; it must be an array", render(exp.BodyLines.v), jsonType(want)))
+			return unresolved(fmt.Errorf("body_lines %s is %s after resolving references; it must be an array", expected.Render(exp.BodyLines.Value), jsonType(want)))
 		}
 		lines, err := ndjson(e.body)
 		if err != nil {
 			return x.fail(e.call, "body_lines", "lines of JSON, each ending with \\n", err.Error())
 		}
-		if d := match("body_lines", want, lines); d != nil {
+		if d := expected.Match("body_lines", want, lines); d != nil {
 			return x.differs(e.call, d)
 		}
 	}
@@ -773,13 +760,13 @@ func (x *checkRun) meets(e *exchange, exp *Expect, b bodies) *Failure {
 func ndjson(body []byte) ([]any, error) {
 	text := string(body)
 	if !strings.HasSuffix(text, "\n") {
-		return nil, fmt.Errorf("the body does not end with \\n: %s", render(shorten(text)))
+		return nil, fmt.Errorf("the body does not end with \\n: %s", expected.Render(expected.Shorten(text)))
 	}
 	lines := []any{}
 	for i, line := range strings.SplitAfter(strings.TrimSuffix(text, "\n"), "\n") {
 		var v any
-		if err := decodeJSON([]byte(line), &v); err != nil {
-			return nil, fmt.Errorf("line %d is not JSON: %v: %s", i+1, err, render(shorten(line)))
+		if err := expected.Decode([]byte(line), &v); err != nil {
+			return nil, fmt.Errorf("line %d is not JSON: %v: %s", i+1, err, expected.Render(expected.Shorten(line)))
 		}
 		lines = append(lines, v)
 	}

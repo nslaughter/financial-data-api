@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/nslaughter/financial-data-api/internal/expected"
 )
 
 // LastStage is the API's last stage: stage 1 is the demo API, and stage 2
@@ -33,7 +35,7 @@ var stageFiles = [LastStage + 1][]string{
 		"release-calendar",
 		"export-handoff",
 		"exports",
-		timingFile,
+		expected.TimingFile,
 	},
 }
 
@@ -41,7 +43,7 @@ var stageFiles = [LastStage + 1][]string{
 // at or before it, in the order of the stage table. When names is not empty,
 // it returns only the files named, with or without .json, each of which
 // must be required at stage.
-func Select(files []*File, stage int, names []string) ([]*File, error) {
+func Select(files []*expected.File, stage int, names []string) ([]*expected.File, error) {
 	if stage < 1 || stage > LastStage {
 		return nil, fmt.Errorf("stage %d: the API's stages are 1 to %d", stage, LastStage)
 	}
@@ -62,11 +64,11 @@ func Select(files []*File, stage int, names []string) ([]*File, error) {
 		}
 		named[name] = true
 	}
-	byName := map[string]*File{}
+	byName := map[string]*expected.File{}
 	for _, f := range files {
 		byName[f.Name] = f
 	}
-	var selected []*File
+	var selected []*expected.File
 	for _, name := range required {
 		if len(named) > 0 && !named[name] {
 			continue
@@ -82,6 +84,6 @@ func Select(files []*File, stage int, names []string) ([]*File, error) {
 
 // runsAt reports whether a scenario runs at stage: it does unless its stages
 // member does not list stage.
-func (s *Scenario) runsAt(stage int) bool {
+func runsAt(s *expected.Scenario, stage int) bool {
 	return s.Stages == nil || slices.Contains(*s.Stages, stage)
 }
