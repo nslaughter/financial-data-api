@@ -9,18 +9,19 @@ fintech, data pipelines, observability, and infrastructure, informed by a
 background in investment research. I help teams turn datasets into APIs whose
 meaning and delivery behavior customers can depend on.
 
-**Status:** The demo API, stage 1, is implemented in Go and passes the stage 1
-conformance suite. Release `v0.1.0` publishes it as the container image
-`ghcr.io/nslaughter/financial-data-api:0.1.0`; see
-[Run the demo API](#run-the-demo-api). This repository also contains the
+**Status:** The full API, stage 2, with exports, the revision history, and
+the release calendar, is implemented in Go and passes the stage 2 conformance
+suite. Release `v0.2.0` publishes it as the container image
+`ghcr.io/nslaughter/financial-data-api:0.2.0`, and release `v0.1.0` published
+the stage 1 demo API as `0.1.0`; see [Run the API](#run-the-api). This
+repository also contains the
 [data contract](spec/data-contract.md) (version 0.3.0, tagged
 `contract-v0.3.0`) with its
 fixtures and expected results, the [API specification](spec/api.md) and its
 [OpenAPI form](spec/openapi.yaml), the [conformance format](spec/conformance.md),
 and the [implementation plan](docs/implementation-plan.md).
-The full API of stage 2, with exports, the revision history, and the release
-calendar, is planned, as are the runnable demonstrations. The dataset is
-synthetic, and this is a demonstration project, not client work.
+The runnable demonstrations are planned. The dataset is synthetic, and this
+is a demonstration project, not client work.
 
 ## What this project demonstrates
 
@@ -161,26 +162,25 @@ Several delivery rules matter as much as the schema:
 
 - An API specification and data dictionary. These are written: see
   [`spec/`](spec).
-- A local startup command and seeded fixtures. These are here for stage 1:
-  see [Run the demo API](#run-the-demo-api).
+- A local startup command and seeded fixtures. These are here: see
+  [Run the API](#run-the-api).
 - Query, export, and update examples.
 - Contract and authorization checks in CI. The conformance suite runs against
   the server on every pull request, and the suite of the image's stage runs
-  against its container image on each pull request that changes the image and
-  before each release.
+  against its container image on every pull request and before each release.
 - A tagged release that names the compatible SDK version.
 - Documented retention and recovery policies, and the limits of the historical
   availability claims.
 
-## Run the demo API
+## Run the API
 
-The demo API is published as a container image with the fixtures built in.
+The API is published as a container image with the fixtures built in.
 This command starts it with the `/test` endpoints enabled, which the
 conformance suite and the SDKs' tests use to set the simulated clock and
 reset state:
 
 ```sh
-docker run --rm -p 8080:8080 -e TEST_CONTROL=enabled ghcr.io/nslaughter/financial-data-api:0.1.0
+docker run --rm -p 8080:8080 -e TEST_CONTROL=enabled ghcr.io/nslaughter/financial-data-api:0.2.0
 ```
 
 The query from the example above, with a demonstration key from the
@@ -191,17 +191,19 @@ curl -H 'Authorization: Bearer demo-research-key' \
   'http://localhost:8080/v1/observations?series_id=activity-index&period_start=2026-08-01&period_end=2026-09-01&available_as_of=2026-09-04T00:00:00Z'
 ```
 
-From a checkout of this repository, this runs the stage 1 conformance suite
+From a checkout of this repository, this runs the stage 2 conformance suite
 against it:
 
 ```sh
-go run ./cmd/conformance --base-url http://localhost:8080 --stage 1
+go run ./cmd/conformance --base-url http://localhost:8080 --stage 2
 ```
 
 [Running the server](spec/api.md#running-the-server) lists the environment
 variables the server reads. The image's labels record the contract version
 it implements and its stage. Each release tag `vX.Y.Z` publishes the image
-tagged `X.Y.Z`, after the conformance suite passes against it.
+tagged `X.Y.Z`, after the conformance suite of its stage passes against it.
+Image `0.1.0` is the stage 1 demo API, which passes the suite with
+`--stage 1`.
 
 ## A later contract change will test the maintenance work
 

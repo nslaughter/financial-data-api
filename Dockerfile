@@ -23,7 +23,7 @@ LABEL org.opencontainers.image.title="Financial data API" \
       org.opencontainers.image.source="https://github.com/nslaughter/financial-data-api" \
       org.opencontainers.image.licenses="LicenseRef-NSPUL-1.0 AND BSD-3-Clause" \
       com.nathanslaughter.financial-data-api.contract-version="0.3.0" \
-      com.nathanslaughter.financial-data-api.stage="1"
+      com.nathanslaughter.financial-data-api.stage="2"
 USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["/server"]
