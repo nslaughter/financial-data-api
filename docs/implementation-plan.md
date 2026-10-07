@@ -32,7 +32,7 @@ start until the operator records the decision here.
 | 8. Add `published_as_of`, the revision history, and the release calendar | Done | [#15](https://github.com/nslaughter/financial-data-api/pull/15) |
 | 9. Add exports | Done | [#16](https://github.com/nslaughter/financial-data-api/pull/16) |
 | 10. Publish the full API image | Done | [#17](https://github.com/nslaughter/financial-data-api/pull/17) |
-| 11. Give each contract term one owner | Done | |
+| 11. Give each contract term one owner | Done | [#21](https://github.com/nslaughter/financial-data-api/pull/21) |
 | 12. Map errors and declare request contracts in `internal/api` | Not started | |
 | 13. Embed the fixture types and remove the smaller repeats | Not started | |
 
