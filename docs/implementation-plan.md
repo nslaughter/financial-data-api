@@ -30,7 +30,7 @@ start until the operator records the decision here.
 | 7. Publish the demo API image | Done | [#14](https://github.com/nslaughter/financial-data-api/pull/14) |
 | 8. Add `published_as_of`, the revision history, and the release calendar | Done | [#15](https://github.com/nslaughter/financial-data-api/pull/15) |
 | 9. Add exports | Done | [#16](https://github.com/nslaughter/financial-data-api/pull/16) |
-| 10. Publish the full API image | Not started | |
+| 10. Publish the full API image | Done | |
 
 ## Package layout
 
