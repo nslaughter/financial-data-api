@@ -10,6 +10,14 @@ name: Release
 # version tag runs it against the image before publishing. The suite here
 # runs at the stage the image's label names.
 #
+# A pull request that changes none of the paths below skips this workflow's
+# image build and label check, which CI does not run. The server reports the
+# contract version of the fixtures it embeds, so a pull request that changes
+# the contract version in fixtures/ must change the Dockerfile's
+# contract-version label too, which runs this workflow on it. Without that,
+# CI passes, and the next version tag fails at "Check the labels" and
+# publishes nothing.
+#
 # Only the Publish job, which runs on a version tag, can write packages. It
 # runs none of the repository's code: it loads the image the Image job tested
 # and pushes it.
