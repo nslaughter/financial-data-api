@@ -1,32 +1,26 @@
 name: Release
 
-# On a pull request that changes the image or this workflow, build the image
-# and run the conformance suite against the container. On a version tag, do
-# the same, then publish the image that passed. The repository owner pushes
-# the tag.
+# On every pull request, build the image, check its labels against
+# GET /v1/meta, and run the conformance suite of the image's stage against
+# the container. On a version tag, do the same, then publish the image that
+# passed. The repository owner pushes the tag.
 #
-# Pull requests that change only the server are tested by the CI workflow,
-# not here: it runs the same stage 2 suite against the binary, and each
-# version tag runs it against the image before publishing. The suite here
-# runs at the stage the image's label names.
+# The CI workflow runs the stage 2 suite against the binary. This workflow
+# runs on every pull request so that a failure only the image shows, such as
+# a file the server embeds that .dockerignore leaves out of the build
+# context, or a label that disagrees with the server, fails the pull request
+# instead of the next version tag.
 #
-# A pull request that changes none of the paths below skips this workflow's
-# image build and label check, which CI does not run. The server reports the
-# contract version of the fixtures it embeds, so a pull request that changes
-# the contract version in fixtures/ must change the Dockerfile's
-# contract-version label too, which runs this workflow on it. Without that,
-# CI passes, and the next version tag fails at "Check the labels" and
-# publishes nothing.
+# The server reports the contract version of the fixtures it embeds, so a
+# pull request that changes the contract version in fixtures/ changes the
+# Dockerfile's contract-version label in the same pull request. "Check the
+# labels" fails a pull request that changes only one of them.
 #
 # Only the Publish job, which runs on a version tag, can write packages. It
 # runs none of the repository's code: it loads the image the Image job tested
 # and pushes it.
 on:
   pull_request:
-    paths:
-      - Dockerfile
-      - .dockerignore
-      - .github/workflows/release.yml
   push:
     tags: ['v[0-9]*']
 
