@@ -59,11 +59,6 @@ The README describes the project for people; it is not a specification.
 
 ## Implementation conventions
 
-The operator settled these conventions on October 7, 2026, after reviewing
-the code of steps 1 to 10. Steps 11 to 13 of the
-[implementation plan](docs/implementation-plan.md) bring that code in line
-with them, and new code follows them.
-
 ### Errors
 
 - Only `internal/api` builds problems. Every other package, and the
