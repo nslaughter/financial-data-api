@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"reflect"
 	"regexp"
 	"sync"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	financialdataapi "github.com/nslaughter/financial-data-api"
+	"github.com/nslaughter/financial-data-api/internal/expected"
 	"github.com/nslaughter/financial-data-api/internal/fixtures"
 	"github.com/nslaughter/financial-data-api/internal/history"
 )
@@ -88,50 +88,50 @@ func TestCreate(t *testing.T) {
 
 // TestExpectedManifests checks the coverage and file of every expected
 // export manifest in expected/ that states them, against an export created
-// at the manifest's position.
+// at the manifest's position. It reads the files with internal/expected and
+// compares with its matching rule, as the runner does.
 func TestExpectedManifests(t *testing.T) {
 	s := NewStore(newHistory(t, loadFixtures(t)))
+	files, err := expected.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
 	checked := 0
 	for _, name := range []string{"export-handoff", "exports"} {
-		data, err := fs.ReadFile(financialdataapi.Expected(), name+".json")
-		if err != nil {
-			t.Fatal(err)
-		}
-		var file struct {
-			Scenarios []struct {
-				Name  string
-				Steps []struct {
-					Expect struct {
-						Body map[string]any `json:"body"`
-					} `json:"expect"`
-				} `json:"steps"`
-			} `json:"scenarios"`
-		}
-		if err := json.Unmarshal(data, &file); err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		for _, sc := range file.Scenarios {
+		for _, sc := range expectedFile(t, files, name).Scenarios {
 			for i, step := range sc.Steps {
-				body := step.Expect.Body
-				position, ok := body["position"].(float64)
+				if step.Expect == nil {
+					continue
+				}
+				body, _ := step.Expect.Body.Value.(map[string]any)
+				position, ok := integerOf(body["position"])
 				if !ok || (body["coverage"] == nil && body["files"] == nil) {
 					continue
 				}
-				e := create(t, s, int64(position))
+				e := create(t, s, position)
 				source := fmt.Sprintf("%s: %s: step %d", name, sc.Name, i+1)
 				if want, ok := body["coverage"].(map[string]any); ok {
-					subset(t, source+": coverage", want, coverageFields(e.Coverage))
+					if d := expected.Match("coverage", want, asJSON(t, coverageFields(e.Coverage))); d != nil {
+						t.Errorf("%s: %s", source, d)
+					}
 					checked++
 				}
 				if files, ok := body["files"].([]any); ok {
 					if len(files) != 1 {
 						t.Fatalf("%s: %d files", source, len(files))
 					}
-					subset(t, source+": file", files[0].(map[string]any), map[string]any{
-						"record_count": float64(e.File.RecordCount),
-						"size_bytes":   float64(e.File.SizeBytes),
+					entry, ok := files[0].(map[string]any)
+					if !ok {
+						t.Fatalf("%s: file %s is not an object", source, expected.Render(files[0]))
+					}
+					got := asJSON(t, map[string]any{
+						"record_count": e.File.RecordCount,
+						"size_bytes":   e.File.SizeBytes,
 						"sha256":       e.File.SHA256,
 					})
+					if d := expected.Match("file", storeMembers(entry), got); d != nil {
+						t.Errorf("%s: %s", source, d)
+					}
 					checked++
 				}
 			}
@@ -142,43 +142,71 @@ func TestExpectedManifests(t *testing.T) {
 	}
 }
 
-// coverageFields returns a coverage as its manifest's JSON members.
-func coverageFields(c Coverage) map[string]any {
-	ids := make([]any, len(c.SeriesIDs))
-	for i, id := range c.SeriesIDs {
-		ids[i] = id
+// expectedFile returns the file of files named name.
+func expectedFile(t *testing.T, files []*expected.File, name string) *expected.File {
+	t.Helper()
+	for _, f := range files {
+		if f.Name == name {
+			return f
+		}
 	}
-	m := map[string]any{
-		"series_ids":        ids,
-		"observation_count": float64(c.ObservationCount),
-		"revision_count":    float64(c.RevisionCount),
-		"period_start":      nil,
-		"period_end":        nil,
-	}
-	if c.PeriodStart != nil {
-		m["period_start"] = *c.PeriodStart
-	}
-	if c.PeriodEnd != nil {
-		m["period_end"] = *c.PeriodEnd
-	}
-	return m
+	t.Fatalf("no file expected/%s.json", name)
+	return nil
 }
 
-// subset checks that every member of want that got knows has its value in
-// got. A member got does not know is reported, so a manifest member the test
-// cannot check is not passed over.
-func subset(t *testing.T, source string, want, got map[string]any) {
+// integerOf returns v, a JSON value, when it is an integer that fits an
+// int64.
+func integerOf(v any) (int64, bool) {
+	n, ok := v.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	i, ok := expected.Integer(n)
+	if !ok || !i.IsInt64() {
+		return 0, false
+	}
+	return i.Int64(), true
+}
+
+// asJSON returns v as the runner decodes a response, with json.Number for
+// numbers, so that expected.Match compares it as the runner does.
+func asJSON(t *testing.T, v any) any {
 	t.Helper()
-	for k, w := range want {
-		g, ok := got[k]
-		switch {
-		case !ok && (k == "name" || k == "url" || k == "media_type"):
-			// Fixed by the API, not the store.
-		case !ok:
-			t.Errorf("%s: the test does not check %s", source, k)
-		case !reflect.DeepEqual(g, w):
-			t.Errorf("%s: %s is %v, want %v", source, k, g, w)
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out any
+	if err := expected.Decode(data, &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// storeMembers returns a manifest's file without the members the API fixes
+// and the store does not know: name, url, and media_type. Every other member
+// stays, so one the test cannot check fails the match instead of being
+// passed over.
+func storeMembers(file map[string]any) map[string]any {
+	out := make(map[string]any, len(file))
+	for k, v := range file {
+		switch k {
+		case "name", "url", "media_type":
+		default:
+			out[k] = v
 		}
+	}
+	return out
+}
+
+// coverageFields returns a coverage as its manifest's JSON members.
+func coverageFields(c Coverage) map[string]any {
+	return map[string]any{
+		"series_ids":        c.SeriesIDs,
+		"observation_count": c.ObservationCount,
+		"revision_count":    c.RevisionCount,
+		"period_start":      c.PeriodStart,
+		"period_end":        c.PeriodEnd,
 	}
 }
 

@@ -2,8 +2,8 @@
 // defines: the file types, loading the files built into the module, their
 // well-formedness checks, the matching rule, and the values the
 // specification gives for running the checks. It has no HTTP, so the
-// conformance runner and the tests of internal/history read the files the
-// same way.
+// conformance runner and the tests of internal/history and internal/exports
+// read the files the same way.
 package expected
 
 import (
