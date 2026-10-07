@@ -57,6 +57,77 @@ The README describes the project for people; it is not a specification.
 - Keep `internal/history` free of HTTP so its rules can be tested directly
   against `expected/`.
 
+## Implementation conventions
+
+The operator settled these conventions on October 7, 2026, after reviewing
+the code of steps 1 to 10. Steps 11 to 13 of the
+[implementation plan](docs/implementation-plan.md) bring that code in line
+with them, and new code follows them.
+
+### Errors
+
+- Only `internal/api` builds problems. Every other package, and the
+  server's state within `internal/api`, returns errors.
+- Return a sentinel error, such as `history.ErrPositionAhead`, when the
+  problem's detail needs no data, and a typed error when it needs a value,
+  such as the dataset a request named.
+- The handler that receives an error maps it to a problem with `errors.Is`
+  or `errors.As`. Only the handler knows which parameter the problem names,
+  so there is no shared table from errors to problems.
+
+### Request contracts
+
+- The route table declares each endpoint's whole request contract: its
+  method, the credential kind it requires, its query parameters, and its
+  body fields. An endpoint that takes a body declares its fields even when
+  it has none, so that any field is refused; an endpoint that takes no body
+  never reads one.
+- The server checks parameter and field names, repeated and empty
+  parameters, and the form of the body before it calls the handler, in the
+  error order of `spec/api.md`. Handlers receive the parsed parameters and
+  fields and convert their values.
+
+### Interfaces
+
+- A package defines the narrowest seam it needs from a dependency: a
+  function type for one method, or an interface of its own for two or more.
+- Add a seam only when there is a second implementation or a test needs a
+  fake. Never define an interface in the package that implements it.
+
+### One owner for each contract term
+
+- `internal/fixtures` owns the data contract's vocabulary: the date and
+  timestamp layouts and their parsers, the change types, the credential
+  kinds, and `MaxInteger`. Other packages use these instead of defining
+  their own.
+- A default that the API applies belongs to the package that applies it:
+  page sizes and limits to `internal/api`, and `CLOCK_START` to
+  `cmd/server`.
+- `internal/expected` owns the format of `expected/`: the file types,
+  loading the files from `financialdataapi.Expected()`, their
+  well-formedness checks, the matching rule of `spec/conformance.md`, and
+  the values it gives for running the checks, such as the dataset whose
+  change stream `change-stream.json` reads. It has no HTTP. The conformance
+  runner and the tests of `internal/history` both use it.
+
+### Response types
+
+- A `fixtures` type that is a table of the data contract is served as it
+  is, or embedded in a response struct that adds the API's fields after it,
+  as a series adds `entitled`. It is never restated field by field.
+- Other domain types carry no JSON tags; `internal/api` declares their
+  response types.
+
+### Duplication
+
+- Each contract rule has one implementation. A second one is allowed only
+  as an independent check of the first, such as the conformance runner's
+  path matching or the escaping test of the canonical export form, and a
+  comment says it is deliberate.
+- Code that reads the contract's files uses that one implementation: a test
+  never carries its own reader or matcher for `expected/`.
+- Tests may repeat small setup helpers, such as loading the fixtures.
+
 ## Commands
 
 | Task | Command |
