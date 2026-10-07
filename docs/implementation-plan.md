@@ -9,7 +9,8 @@ and [`spec/conformance.md`](../spec/conformance.md), at contract version
 0.3.0. Read [`AGENTS.md`](../AGENTS.md) before starting any of them.
 
 Pull requests 1 to 7 complete stage 1, the demo API the SDKs use. Pull
-requests 8 to 10 complete stage 2, the full API.
+requests 8 to 10 complete stage 2, the full API. Pull requests 11 to 13
+bring the code in line with the implementation conventions in `AGENTS.md`.
 
 ## Progress
 
@@ -31,6 +32,9 @@ start until the operator records the decision here.
 | 8. Add `published_as_of`, the revision history, and the release calendar | Done | [#15](https://github.com/nslaughter/financial-data-api/pull/15) |
 | 9. Add exports | Done | [#16](https://github.com/nslaughter/financial-data-api/pull/16) |
 | 10. Publish the full API image | Done | [#17](https://github.com/nslaughter/financial-data-api/pull/17) |
+| 11. Give each contract term one owner | Not started | |
+| 12. Map errors and declare request contracts in `internal/api` | Not started | |
+| 13. Embed the fixture types and remove the smaller repeats | Not started | |
 
 ## Package layout
 
@@ -288,6 +292,88 @@ applies them:
 - A pull request that changes the contract version in `fixtures/` changes
   the Dockerfile's `contract-version` label in the same pull request. The
   Release workflow's label check enforces it.
+
+## Implementation conventions
+
+The operator settled the
+[implementation conventions](../AGENTS.md#implementation-conventions) on
+October 7, 2026, after reviewing the code of steps 1 to 10. Steps 11 to 13
+bring that code in line with them, one area at a time, without changing what
+the server or the runner does: every problem keeps its status, code,
+parameter, and detail, and the runner reports the same results. None of them
+changes `spec/`, `fixtures/`, or `expected/`.
+
+Each step is done when `gofmt -l .` prints nothing, `go vet ./...` and
+`go test ./...` pass, every file passes with `--stage 2` against the real
+server, and the Release workflow passes on its pull request.
+
+### 11. Give each contract term one owner
+
+- Add `internal/expected`, moving into it from `internal/conformance`:
+  - the file types and `Load`;
+  - the well-formedness checks, with the syntax of references that they
+    need;
+  - the matching rule;
+  - the values `spec/conformance.md` gives for running the checks, such as
+    the dataset whose change stream `change-stream.json` reads.
+
+  The runner keeps executing checks, resolving references, validating
+  responses against `spec/openapi.yaml`, and reporting.
+- In the tests of `internal/history`, replace the file types, the loader
+  that reads `../../expected` from disk, and `match` with
+  `internal/expected`. Numbers then compare as `json.Number`, as the runner
+  compares them.
+- Add the credential kinds to `internal/fixtures`, and use them in
+  `internal/api` and `internal/conformance`. `internal/conformance` uses
+  `fixtures.TimestampLayout`, and `internal/history` parses with
+  `fixtures.ParseDate` and `fixtures.ParseTimestamp` instead of its own
+  layouts.
+- Add `internal/expected` to the [package layout](#package-layout), and
+  remove loading `expected/` and matching from the row of
+  `internal/conformance`.
+- Tests: `internal/expected` takes the tests of loading, well-formedness,
+  and matching from `internal/conformance`, and the tests that stay with the
+  runner pass without changes to what they expect.
+
+Out of scope: errors and request contracts in `internal/api` (step 12), and
+response types and seams (step 13).
+
+### 12. Map errors and declare request contracts in `internal/api`
+
+- `state.setClock` and `state.changeCredential` return errors, and their
+  handlers map them to the problems they return now.
+- `endpoint` declares each endpoint's query parameters and body fields.
+  `serve` parses them into `call`, and the handlers drop their `parseQuery`
+  and `parseBody` calls.
+- One catalog type holds the datasets and series and looks each up by its
+  identifier, replacing `findSeries`, `datasetExists`, and the loop in
+  `getDataset`.
+- One helper looks up a dataset and then checks entitlement, for
+  `readChanges` and `createExport`.
+- Tests:
+  - each error the state returns has a test;
+  - the existing `httptest` tests of parsing, error bodies, and error order
+    pass without changes to what they expect.
+
+Out of scope: response types and seams (step 13), and an interface between
+`internal/api` and `internal/history`, which the conventions leave concrete
+until a test needs a fake.
+
+### 13. Embed the fixture types and remove the smaller repeats
+
+- The dataset and series responses embed `fixtures.Dataset` and
+  `fixtures.Series`.
+- `exports.NewStore` takes a function that returns a dataset's snapshot at a
+  position, instead of `*history.History`.
+- One function writes a response's bytes, for JSON and for export files.
+- `internal/history` converts its revisions to `fixtures.Revision` in one
+  place.
+- A comment on the runner's path matching says it is deliberately separate
+  from the server's routing.
+- Tests: the existing catalog, export, and history tests pass without
+  changes to what they expect.
+
+Out of scope: the repeated test setup helpers, which the conventions allow.
 
 ## After stage 2
 
