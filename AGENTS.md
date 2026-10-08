@@ -38,7 +38,7 @@ The README describes the project for people; it is not a specification.
 
 - Go, standard library first. The server needs no third-party dependencies.
   For OpenAPI response validation, the conformance runner uses two: a JSON
-  Schema validator and a YAML parser. The operator chose these over a single
+  Schema validator and a YAML parser. The owner chose these over a single
   OpenAPI library because none validates OpenAPI 3.1 on Go 1.22.
 - Response structs keep the field order of the contract's tables and never
   use `omitempty`; nullable fields are pointers, so absent values encode as
@@ -142,8 +142,8 @@ When asked to do the next item:
    item is the first step whose status is not `Done`.
 2. Stop and report instead of starting if any of these holds:
    - `gh pr list --state open` shows a pull request for that step; report its
-     state, because the operator reviews and merges it;
-   - the step's status is `Needs operator decision`; name the decision.
+     state, because the owner reviews and merges it;
+   - the step's status is `Needs owner decision`; name the decision.
 3. Create a branch named `step-<N>-<short-slug>`, such as
    `step-1-fixtures`, and implement the step within its scope.
 4. Run every check the step lists. If a check fails because a specification
