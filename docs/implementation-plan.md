@@ -339,6 +339,24 @@ server, and the Release workflow passes on its pull request.
 Out of scope: errors and request contracts in `internal/api` (step 12), and
 response types and seams (step 13).
 
+The operator settled three questions raised in this step's review, one on
+October 7, 2026, and two on October 8, and
+[#21](https://github.com/nslaughter/financial-data-api/pull/21) applies them:
+
+- `sortedKeys`, which several packages repeat, is not a contract rule, so the
+  convention of one implementation per rule does not cover it, and its copies
+  stay. Raising the module's Go version to 1.23 to replace them with
+  `slices.Sorted(maps.Keys(m))` is not worth it on its own.
+- `TestExpectedManifests` in `internal/exports` also read `expected/` with its
+  own decoder and matcher. It moves onto `internal/expected` in this step,
+  although the step names only the tests of `internal/history`, because a test
+  never carries its own reader or matcher for `expected/` and no later step
+  covers it.
+- The `internal/expected` bullet of the
+  [implementation conventions](../AGENTS.md#one-owner-for-each-contract-term)
+  names its users as the conformance runner and the tests that read
+  `expected/`, not only the tests of `internal/history`.
+
 ### 12. Map errors and declare request contracts in `internal/api`
 
 - `state.setClock` and `state.changeCredential` return errors, and their

@@ -103,7 +103,7 @@ The README describes the project for people; it is not a specification.
   well-formedness checks, the matching rule of `spec/conformance.md`, and
   the values it gives for running the checks, such as the dataset whose
   change stream `change-stream.json` reads. It has no HTTP. The conformance
-  runner and the tests of `internal/history` both use it.
+  runner and the tests that read `expected/` use it.
 
 ### Response types
 
