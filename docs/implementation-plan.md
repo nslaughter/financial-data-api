@@ -339,8 +339,8 @@ server, and the Release workflow passes on its pull request.
 Out of scope: errors and request contracts in `internal/api` (step 12), and
 response types and seams (step 13).
 
-The operator settled three questions raised in this step's review, one on
-October 7, 2026, and two on October 8, and
+The operator settled four questions raised in this step's review, one on
+October 7, 2026, and three on October 8, and
 [#21](https://github.com/nslaughter/financial-data-api/pull/21) applies them:
 
 - `sortedKeys`, which several packages repeat, is not a contract rule, so the
@@ -356,6 +356,11 @@ October 7, 2026, and two on October 8, and
   [implementation conventions](../AGENTS.md#one-owner-for-each-contract-term)
   names its users as the conformance runner and the tests that read
   `expected/`, not only the tests of `internal/history`.
+- The tests of `internal/history` keep their own `defaultClock` and
+  `defaultLimit`, the default `CLOCK_START` and change-stream limit, because
+  they cannot import `cmd/server` or `internal/api`, which apply them.
+  Declaring the defaults anywhere else would go against the convention that a
+  default belongs to the package that applies it.
 
 ### 12. Map errors and declare request contracts in `internal/api`
 
