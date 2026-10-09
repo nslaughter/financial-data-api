@@ -177,7 +177,7 @@ the server and its image on every pull request.
 | Pagination returns a consistent result while data changes during traversal. | Met | `pagination` |
 | Unauthorized queries, resumed pages, and exports are refused. | Met | `access-control`, `exports` |
 | Bulk delivery reconciles with subsequent updates, including a revision published during an export. | Met | `export-handoff` |
-| The SDK workflow runs against the expanded API. | Not yet | The SDKs' own runners |
+| The SDK workflow runs against the expanded API. | Not yet | The SDKs' runners, once they are built |
 
 The [Python SDK](https://github.com/nslaughter/financial-data-sdk-python) is
 in development: it queries the catalog, observations, and the change stream,
