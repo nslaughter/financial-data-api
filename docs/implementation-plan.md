@@ -383,8 +383,11 @@ Out of scope: the repeated test setup helpers, which the conventions allow.
   [decision D7](https://github.com/nslaughter/financial-data-sdk-python/blob/main/spec/client.md#d7-request-ids)
   of the Python SDK's client contract, which assumes the header is named
   `Request-Id`. The SDK's step 11 waits for a `contract-v0.4.0` tag and an
-  image that implements it. The change needs that contract version and a
-  step in this plan before any work starts.
+  image that implements it, and runs its stage 1 shared checks against that
+  image. The SDK's step 8 records that a stage 1 run against a stage 2 image
+  fails a scenario of `request-errors`, and this repository now builds a
+  stage 2 image. The change needs that contract version and a step in this
+  plan before any work starts.
 - The migration stage's breaking change is an open question in the
   [data contract](../spec/data-contract.md#open-questions); it needs a
   decision and a new contract version before any work starts. The operator
