@@ -1,17 +1,14 @@
-package conformance
+package expected
 
 import (
-	"io/fs"
 	"slices"
 	"strings"
 	"testing"
-
-	financialdataapi "github.com/nslaughter/financial-data-api"
 )
 
 func loadExpected(t *testing.T) []*File {
 	t.Helper()
-	files, err := Load(financialdataapi.Expected())
+	files, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,14 +40,14 @@ func TestLoadExpected(t *testing.T) {
 	if len(stream.PositionChecks) == 0 || len(stream.ReadChecks) == 0 || len(stream.Scenarios) == 0 {
 		t.Error("change-stream: want position checks, read checks, and scenarios")
 	}
-	timing := fileNamed(t, files, timingFile)
+	timing := fileNamed(t, files, TimingFile)
 	if len(timing.TimingChecks) == 0 || len(timing.QueryChecks) != 0 {
 		t.Errorf("release-timing: %d timing checks and %d query checks", len(timing.TimingChecks), len(timing.QueryChecks))
 	}
 	published := fileNamed(t, files, "published-as-of")
 	contrasts := 0
 	for _, c := range published.QueryChecks {
-		if c.ContrastAvailableAsOf.set {
+		if c.ContrastAvailableAsOf.Present {
 			contrasts++
 		}
 	}
@@ -61,98 +58,13 @@ func TestLoadExpected(t *testing.T) {
 	for _, s := range fileNamed(t, files, "request-errors").Scenarios {
 		if s.Stages != nil {
 			staged++
-			if !s.runsAt(1) || s.runsAt(2) {
+			if !slices.Equal(*s.Stages, []int{1}) {
 				t.Errorf("request-errors: scenario %q has stages %v, want [1]", s.Name, *s.Stages)
 			}
 		}
 	}
 	if staged != 1 {
 		t.Errorf("request-errors: %d scenarios have stages, want 1", staged)
-	}
-}
-
-// TestStageTableCoversEveryFile checks that every file of expected/ is in
-// the stage table exactly once, so no file is left out of a run.
-func TestStageTableCoversEveryFile(t *testing.T) {
-	names, err := fs.Glob(financialdataapi.Expected(), "*.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var staged []string
-	for _, files := range stageFiles {
-		staged = append(staged, files...)
-	}
-	for _, name := range names {
-		name = strings.TrimSuffix(name, ".json")
-		if n := countOf(staged, name); n != 1 {
-			t.Errorf("%s is in the stage table %d times", name, n)
-		}
-	}
-	if len(staged) != len(names) {
-		t.Errorf("the stage table lists %d files; expected/ has %d", len(staged), len(names))
-	}
-}
-
-func countOf(list []string, s string) int {
-	n := 0
-	for _, e := range list {
-		if e == s {
-			n++
-		}
-	}
-	return n
-}
-
-func TestSelect(t *testing.T) {
-	files := loadExpected(t)
-	names := func(fs []*File) []string {
-		var out []string
-		for _, f := range fs {
-			out = append(out, f.Name)
-		}
-		return out
-	}
-
-	stage1, err := Select(files, 1, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := names(stage1); !slices.Equal(got, stageFiles[1]) {
-		t.Errorf("stage 1: got %v, want %v", got, stageFiles[1])
-	}
-	stage2, err := Select(files, 2, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := names(stage2), append(slices.Clone(stageFiles[1]), stageFiles[2]...); !slices.Equal(got, want) {
-		t.Errorf("stage 2: got %v, want %v", got, want)
-	}
-	// Named files run in the order of the stage table.
-	some, err := Select(files, 2, []string{"exports.json", "pagination"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := names(some); !slices.Equal(got, []string{"pagination", "exports"}) {
-		t.Errorf("named files: got %v", got)
-	}
-
-	errorCases := []struct {
-		stage int
-		names []string
-		want  string
-	}{
-		{0, nil, "stages are 1 to 2"},
-		{3, nil, "stages are 1 to 2"},
-		{1, []string{"exports"}, "exports is required from stage 2, so it does not run at stage 1"},
-		{1, []string{"no-such-file"}, "no-such-file is not a file of the stage table"},
-	}
-	for _, tt := range errorCases {
-		if _, err := Select(files, tt.stage, tt.names); err == nil || !strings.Contains(err.Error(), tt.want) {
-			t.Errorf("stage %d, %v: got %v, want an error containing %q", tt.stage, tt.names, err, tt.want)
-		}
-	}
-	if _, err := Select(files[1:], 1, nil); err == nil || !strings.Contains(err.Error(), "is missing") {
-		t.Errorf("without %s: got %v, want an error about a missing file", files[0].Name, err)
 	}
 }
 
@@ -223,7 +135,7 @@ func TestParseFileIsStrict(t *testing.T) {
 }
 
 func TestParseFileTimingChecks(t *testing.T) {
-	if _, err := ParseFile(timingFile, []byte(`{"checks": [{"name": "t", "period_start": "2026-08-01", "expected": {"delay": 0}}]}`)); err == nil ||
+	if _, err := ParseFile(TimingFile, []byte(`{"checks": [{"name": "t", "period_start": "2026-08-01", "expected": {"delay": 0}}]}`)); err == nil ||
 		!strings.Contains(err.Error(), `expected names "delay", which the check does not compute`) {
 		t.Fatalf("got %v, want an error about the member delay", err)
 	}

@@ -17,8 +17,8 @@ bring the code in line with the implementation conventions in `AGENTS.md`.
 Each step's pull request changes its own row: it sets **Status** to `Done`,
 and after the pull request is opened, a follow-up commit on the same branch
 fills in **Pull request**. A row reads `Done` on `main` only once its pull
-request is merged. A step whose status is `Needs operator decision` cannot
-start until the operator records the decision here.
+request is merged. A step whose status is `Needs owner decision` cannot
+start until the owner records the decision here.
 
 | Step | Status | Pull request |
 | --- | --- | --- |
@@ -32,7 +32,7 @@ start until the operator records the decision here.
 | 8. Add `published_as_of`, the revision history, and the release calendar | Done | [#15](https://github.com/nslaughter/financial-data-api/pull/15) |
 | 9. Add exports | Done | [#16](https://github.com/nslaughter/financial-data-api/pull/16) |
 | 10. Publish the full API image | Done | [#17](https://github.com/nslaughter/financial-data-api/pull/17) |
-| 11. Give each contract term one owner | Not started | |
+| 11. Give each contract term one owner | Done | [#21](https://github.com/nslaughter/financial-data-api/pull/21) |
 | 12. Map errors and declare request contracts in `internal/api` | Not started | |
 | 13. Embed the fixture types and remove the smaller repeats | Not started | |
 
@@ -47,7 +47,8 @@ A pull request may refine this layout if it explains why.
 | `internal/history` | The data rules as pure functions: visibility, head positions, both cutoffs, the revision history, change-stream reads and retention, and the canonical export bytes. No HTTP. |
 | `internal/api` | Routing, request parsing, errors, authentication, entitlements, pagination tokens, handlers, and test control. |
 | `internal/exports` | The export store (stage 2). |
-| `internal/conformance` | The conformance runner's logic: loading `expected/`, executing checks, matching, and references. |
+| `internal/expected` | The format of `expected/`: the file types, loading the files, their well-formedness checks and the syntax of references, the matching rule, and the values `spec/conformance.md` gives for running the checks. No HTTP. |
+| `internal/conformance` | The conformance runner's logic: executing checks and resolving references. |
 | `cmd/server` | The server binary: environment, startup validation, and serving. |
 | `cmd/conformance` | The runner binary. |
 
@@ -164,7 +165,7 @@ Out of scope: running against the real server; nothing serves the API yet.
 
 Out of scope: observations, pagination, and the change stream.
 
-The operator settled three questions raised in this step's review on
+The owner settled three questions raised in this step's review on
 October 5, 2026, and [#9](https://github.com/nslaughter/financial-data-api/pull/9)
 applies them:
 
@@ -209,12 +210,12 @@ parameter.
 
 ### 7. Publish the demo API image
 
-Before this step starts, the operator chooses the image name and the tag
+Before this step starts, the owner chooses the image name and the tag
 scheme that triggers a release. Release tags must not match `contract-v*`,
 which marks contract versions. The decision is recorded here and the step's
 status changes to `Not started`.
 
-The operator chose both on October 6, 2026:
+The owner chose both on October 6, 2026:
 
 - **Image name:** `ghcr.io/nslaughter/financial-data-api`.
 - **Release tags:** the server's own semantic version, `vX.Y.Z`, which is
@@ -256,7 +257,7 @@ Stage 1 is complete here. The SDKs can pin the image.
   `GET /v1/revisions`, so the stage 1 scenario in `request-errors` no longer
   applies.
 
-The operator confirmed on October 6, 2026, a correction made in this step's
+The owner confirmed on October 6, 2026, a correction made in this step's
 review: the Commands table in [`AGENTS.md`](../AGENTS.md) runs the
 conformance suite with `--stage 2` and the `--file` flags of the CI job until
 step 9 adds exports. The `--stage 1` command it gave before fails against a
@@ -279,7 +280,7 @@ server that serves `published_as_of` and `GET /v1/revisions`.
 - Update the image labels and the README for stage 2, and run the release
   workflow with `--stage 2`.
 
-The operator settled two questions raised in this step's review on
+The owner settled two questions raised in this step's review on
 October 7, 2026, and [#17](https://github.com/nslaughter/financial-data-api/pull/17)
 applies them:
 
@@ -295,7 +296,7 @@ applies them:
 
 ## Implementation conventions
 
-The operator settled the
+The owner settled the
 [implementation conventions](../AGENTS.md#implementation-conventions) on
 October 7, 2026, after reviewing the code of steps 1 to 10. Steps 11 to 13
 bring that code in line with them, one area at a time, without changing what
@@ -337,6 +338,29 @@ server, and the Release workflow passes on its pull request.
 
 Out of scope: errors and request contracts in `internal/api` (step 12), and
 response types and seams (step 13).
+
+The owner settled four questions raised in this step's review, one on
+October 7, 2026, and three on October 8, and
+[#21](https://github.com/nslaughter/financial-data-api/pull/21) applies them:
+
+- `sortedKeys`, which several packages repeat, is not a contract rule, so the
+  convention of one implementation per rule does not cover it, and its copies
+  stay. Raising the module's Go version to 1.23 to replace them with
+  `slices.Sorted(maps.Keys(m))` is not worth it on its own.
+- `TestExpectedManifests` in `internal/exports` also read `expected/` with its
+  own decoder and matcher. It moves onto `internal/expected` in this step,
+  although the step names only the tests of `internal/history`, because a test
+  never carries its own reader or matcher for `expected/` and no later step
+  covers it.
+- The `internal/expected` bullet of the
+  [implementation conventions](../AGENTS.md#one-owner-for-each-contract-term)
+  names its users as the conformance runner and the tests that read
+  `expected/`, not only the tests of `internal/history`.
+- The tests of `internal/history` keep their own `defaultClock` and
+  `defaultLimit`, the default `CLOCK_START` and change-stream limit, because
+  they cannot import `cmd/server` or `internal/api`, which apply them.
+  Declaring the defaults anywhere else would go against the convention that a
+  default belongs to the package that applies it.
 
 ### 12. Map errors and declare request contracts in `internal/api`
 
@@ -380,6 +404,6 @@ Out of scope: the repeated test setup helpers, which the conventions allow.
 - The monitor (stage 3) uses the published image and runs `release-timing`.
 - The migration stage's breaking change is an open question in the
   [data contract](../spec/data-contract.md#open-questions); it needs a
-  decision and a new contract version before any work starts. The operator
+  decision and a new contract version before any work starts. The owner
   reviewed it again on October 7, 2026, and left it open until stage 3 is
   underway; stages 1 to 3 do not depend on it.

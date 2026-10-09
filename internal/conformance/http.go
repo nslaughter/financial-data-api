@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nslaughter/financial-data-api/internal/expected"
 )
 
 // maxBody is the most bytes of a response body the runner reads.
@@ -50,7 +52,7 @@ type exchange struct {
 func (e *exchange) statusLine() string {
 	s := strconv.Itoa(e.status)
 	if body := strings.TrimSpace(string(e.body)); body != "" {
-		s += " " + shorten(body)
+		s += " " + expected.Shorten(body)
 	}
 	return s
 }

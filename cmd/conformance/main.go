@@ -31,6 +31,7 @@ import (
 
 	financialdataapi "github.com/nslaughter/financial-data-api"
 	"github.com/nslaughter/financial-data-api/internal/conformance"
+	"github.com/nslaughter/financial-data-api/internal/expected"
 	"github.com/nslaughter/financial-data-api/internal/fixtures"
 )
 
@@ -113,8 +114,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 // setup loads the built-in contract and returns a runner for the server and
 // the files to run.
-func setup(baseURL string, stage int, named []string) (*conformance.Runner, []*conformance.File, error) {
-	all, err := conformance.Load(financialdataapi.Expected())
+func setup(baseURL string, stage int, named []string) (*conformance.Runner, []*expected.File, error) {
+	all, err := expected.Load()
 	if err != nil {
 		return nil, nil, fmt.Errorf("expected/: %w", err)
 	}

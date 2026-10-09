@@ -1,12 +1,9 @@
 package history
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -15,12 +12,14 @@ import (
 	"time"
 
 	financialdataapi "github.com/nslaughter/financial-data-api"
+	"github.com/nslaughter/financial-data-api/internal/expected"
 	"github.com/nslaughter/financial-data-api/internal/fixtures"
 )
 
 // These tests run the checks in expected/ that need no HTTP, reading the
-// files as spec/conformance.md describes. The constants below are the
-// specifications' defaults, which the files rely on without stating.
+// files with internal/expected and comparing by its matching rule, as the
+// conformance runner does. The constants below are the API's defaults,
+// which the files rely on without stating.
 const (
 	// defaultClock is the default CLOCK_START of spec/api.md. A check without
 	// a clock member runs after a reset to it.
@@ -28,9 +27,6 @@ const (
 	// defaultLimit is the default limit of GET
 	// /v1/datasets/{dataset_id}/changes in spec/api.md.
 	defaultLimit = 100
-	// streamDataset is the dataset whose change stream spec/conformance.md
-	// reads for the checks of change-stream.json.
-	streamDataset = "core-indicators"
 )
 
 // queryFiles are the files whose query checks spec/conformance.md lists.
@@ -53,86 +49,6 @@ var scenarioFiles = []string{
 	"revision-history",
 }
 
-// expectedFile is a file in expected/. Members these tests do not run, which
-// need HTTP, a runner's paging, or an SDK, are kept raw.
-type expectedFile struct {
-	ContractVersion     string          `json:"contract_version"`
-	Case                string          `json:"case"`
-	Description         string          `json:"description"`
-	Checks              []queryCheck    `json:"checks"`
-	PositionChecks      []positionCheck `json:"position_checks"`
-	ReadChecks          []readCheck     `json:"read_checks"`
-	PagesWithPageSize10 json.RawMessage `json:"pages_with_page_size_10"`
-	ApplyChecks         json.RawMessage `json:"apply_checks"`
-	Scenarios           json.RawMessage `json:"scenarios"`
-}
-
-type queryCheck struct {
-	Name                  string             `json:"name"`
-	Clock                 *string            `json:"clock"`
-	Query                 map[string]*string `json:"query"`
-	Expected              any                `json:"expected"`
-	ContrastAvailableAsOf any                `json:"contrast_available_as_of"`
-	Reason                string             `json:"reason"`
-}
-
-type positionCheck struct {
-	Name             string `json:"name"`
-	At               string `json:"at"`
-	ExpectedPosition int64  `json:"expected_position"`
-	Reason           string `json:"reason"`
-}
-
-type readCheck struct {
-	Name                 string  `json:"name"`
-	Clock                *string `json:"clock"`
-	AfterPosition        int64   `json:"after_position"`
-	Limit                *int    `json:"limit"`
-	Expected             any     `json:"expected"`
-	ExpectedNextPosition int64   `json:"expected_next_position"`
-	ExpectedHeadPosition int64   `json:"expected_head_position"`
-	Reason               string  `json:"reason"`
-}
-
-// scenario is a scenario as spec/conformance.md describes it. Members these
-// tests do not act on are kept raw, so that a step using them is recognized
-// and left to the API runner.
-type scenario struct {
-	Name              string          `json:"name"`
-	Reason            string          `json:"reason"`
-	Clock             *string         `json:"clock"`
-	Stages            json.RawMessage `json:"stages"`
-	Steps             []scenarioStep  `json:"steps"`
-	ExpectedLocalCopy json.RawMessage `json:"expected_local_copy"`
-}
-
-type scenarioStep struct {
-	ID            string          `json:"id"`
-	SetClock      json.RawMessage `json:"set_clock"`
-	SetCredential json.RawMessage `json:"set_credential"`
-	Reset         json.RawMessage `json:"reset"`
-	Request       *stepRequest    `json:"request"`
-	Expect        *stepExpect     `json:"expect"`
-}
-
-type stepRequest struct {
-	Method        *string         `json:"method"`
-	Path          string          `json:"path"`
-	Query         map[string]any  `json:"query"`
-	Credential    json.RawMessage `json:"credential"`
-	Authorization json.RawMessage `json:"authorization"`
-	Body          json.RawMessage `json:"body"`
-}
-
-type stepExpect struct {
-	Status     int             `json:"status"`
-	Code       *string         `json:"code"`
-	Body       any             `json:"body"`
-	Headers    json.RawMessage `json:"headers"`
-	BodySHA256 json.RawMessage `json:"body_sha256"`
-	BodyLines  json.RawMessage `json:"body_lines"`
-}
-
 // load returns the embedded fixtures and their history.
 func load(t *testing.T) (*fixtures.Fixtures, *History) {
 	t.Helper()
@@ -147,39 +63,41 @@ func load(t *testing.T) (*fixtures.Fixtures, *History) {
 	return f, h
 }
 
-// readExpected decodes expected/<name>.json into v. A member v does not
-// define fails the test, so that a check these tests do not understand is
-// never passed unread. The file's contract version must be the fixtures'.
-func readExpected(t *testing.T, f *fixtures.Fixtures, name string, v *expectedFile) {
+// expectedFile returns expected/<name>.json as internal/expected loads it.
+// The file's contract version must be the fixtures'.
+func expectedFile(t *testing.T, f *fixtures.Fixtures, name string) *expected.File {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "expected", name+".json"))
+	files, err := expected.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
-		t.Fatalf("%s: %v", name, err)
+	for _, file := range files {
+		if file.Name != name {
+			continue
+		}
+		if file.ContractVersion != f.ContractVersion {
+			t.Fatalf("%s: contract_version %q, but the fixtures are %q", name, file.ContractVersion, f.ContractVersion)
+		}
+		return file
 	}
-	if v.ContractVersion != f.ContractVersion {
-		t.Fatalf("%s: contract_version %q, but the fixtures are %q", name, v.ContractVersion, f.ContractVersion)
-	}
+	t.Fatalf("no file expected/%s.json", name)
+	return nil
 }
 
 func timestamp(t *testing.T, s string) time.Time {
 	t.Helper()
-	tm, err := time.Parse(timestampLayout, s)
-	if err != nil {
-		t.Fatal(err)
+	tm, ok := fixtures.ParseTimestamp(s)
+	if !ok {
+		t.Fatalf("%q is not a timestamp", s)
 	}
 	return tm
 }
 
 func date(t *testing.T, s string) time.Time {
 	t.Helper()
-	d, err := time.Parse(dateLayout, s)
-	if err != nil {
-		t.Fatal(err)
+	d, ok := fixtures.ParseDate(s)
+	if !ok {
+		t.Fatalf("%q is not a date", s)
 	}
 	return d
 }
@@ -235,7 +153,7 @@ func queryOf(t *testing.T, f *fixtures.Fixtures, h *History, params map[string]*
 			}
 			at := timestamp(t, *value)
 			if at.After(clock) {
-				t.Fatalf("%s %s is after the clock %s, which the API refuses", name, *value, clock.Format(timestampLayout))
+				t.Fatalf("%s %s is after the clock %s, which the API refuses", name, *value, clock.Format(fixtures.TimestampLayout))
 			}
 			q.Cutoff = &Cutoff{Kind: kind, At: at}
 		default:
@@ -250,34 +168,31 @@ func TestQueryChecks(t *testing.T) {
 	f, h := load(t)
 	for _, name := range queryFiles {
 		t.Run(name, func(t *testing.T) {
-			var file expectedFile
-			readExpected(t, f, name, &file)
-			if len(file.Checks) == 0 {
+			file := expectedFile(t, f, name)
+			if len(file.QueryChecks) == 0 {
 				t.Fatal("no query checks")
 			}
-			for _, c := range file.Checks {
+			for _, c := range file.QueryChecks {
 				t.Run(c.Name, func(t *testing.T) {
 					clock := clockOf(t, c.Clock)
 					got := h.Observations(queryOf(t, f, h, c.Query, clock))
-					if d := match("data", c.Expected, asJSON(t, got)); d != "" {
+					if d := expected.Match("data", c.Expected.Value, asJSON(t, got)); d != nil {
 						t.Error(d)
 					}
-					if c.ContrastAvailableAsOf == nil {
+					if !c.ContrastAvailableAsOf.Present {
 						return
 					}
 					// The same query with published_as_of replaced by
-					// available_as_of at the same instant.
+					// available_as_of at the same instant. internal/expected
+					// refuses a contrast without published_as_of.
 					contrast := make(map[string]*string, len(c.Query))
 					for k, v := range c.Query {
 						contrast[k] = v
 					}
-					if contrast["published_as_of"] == nil {
-						t.Fatal("contrast_available_as_of without published_as_of")
-					}
 					contrast["available_as_of"] = contrast["published_as_of"]
 					delete(contrast, "published_as_of")
 					got = h.Observations(queryOf(t, f, h, contrast, clock))
-					if d := match("contrast data", c.ContrastAvailableAsOf, asJSON(t, got)); d != "" {
+					if d := expected.Match("contrast data", c.ContrastAvailableAsOf.Value, asJSON(t, got)); d != nil {
 						t.Error(d)
 					}
 				})
@@ -288,16 +203,16 @@ func TestQueryChecks(t *testing.T) {
 
 func TestPositionChecks(t *testing.T) {
 	f, h := load(t)
-	var file expectedFile
-	readExpected(t, f, "change-stream", &file)
+	file := expectedFile(t, f, "change-stream")
 	if len(file.PositionChecks) == 0 {
 		t.Fatal("no position checks")
 	}
 	for _, c := range file.PositionChecks {
 		t.Run(c.Name, func(t *testing.T) {
 			// The head position with the clock at c.At.
-			if got := h.Position(streamDataset, timestamp(t, c.At)); got != c.ExpectedPosition {
-				t.Errorf("head_position %d, want %d", got, c.ExpectedPosition)
+			got := h.Position(expected.StreamDataset, timestamp(t, c.At))
+			if d := expected.Match("head_position", c.ExpectedPosition.Value, asJSON(t, got)); d != nil {
+				t.Error(d)
 			}
 		})
 	}
@@ -305,29 +220,37 @@ func TestPositionChecks(t *testing.T) {
 
 func TestReadChecks(t *testing.T) {
 	f, h := load(t)
-	var file expectedFile
-	readExpected(t, f, "change-stream", &file)
+	file := expectedFile(t, f, "change-stream")
 	if len(file.ReadChecks) == 0 {
 		t.Fatal("no read checks")
 	}
 	for _, c := range file.ReadChecks {
 		t.Run(c.Name, func(t *testing.T) {
+			// The API reads after and limit as exact integers.
+			after, err := c.AfterPosition.Int64()
+			if err != nil {
+				t.Fatalf("after_position: %v", err)
+			}
 			limit := defaultLimit
 			if c.Limit != nil {
-				limit = *c.Limit
+				n, err := c.Limit.Int64()
+				if err != nil {
+					t.Fatalf("limit: %v", err)
+				}
+				limit = int(n)
 			}
-			got, err := h.ReadChanges(streamDataset, clockOf(t, c.Clock), c.AfterPosition, limit)
+			got, err := h.ReadChanges(expected.StreamDataset, clockOf(t, c.Clock), after, limit)
 			if err != nil {
 				t.Fatalf("ReadChanges: %v", err)
 			}
-			if d := match("data", c.Expected, asJSON(t, got.Events)); d != "" {
+			if d := expected.Match("data", c.Expected.Value, asJSON(t, got.Events)); d != nil {
 				t.Error(d)
 			}
-			if got.NextPosition != c.ExpectedNextPosition {
-				t.Errorf("next_position %d, want %d", got.NextPosition, c.ExpectedNextPosition)
+			if d := expected.Match("next_position", c.ExpectedNextPosition.Value, asJSON(t, got.NextPosition)); d != nil {
+				t.Error(d)
 			}
-			if got.HeadPosition != c.ExpectedHeadPosition {
-				t.Errorf("head_position %d, want %d", got.HeadPosition, c.ExpectedHeadPosition)
+			if d := expected.Match("head_position", c.ExpectedHeadPosition.Value, asJSON(t, got.HeadPosition)); d != nil {
+				t.Error(d)
 			}
 		})
 	}
@@ -341,16 +264,9 @@ func TestScenarios(t *testing.T) {
 	f, h := load(t)
 	for _, name := range scenarioFiles {
 		t.Run(name, func(t *testing.T) {
-			var file expectedFile
-			readExpected(t, f, name, &file)
-			var scenarios []scenario
-			dec := json.NewDecoder(bytes.NewReader(file.Scenarios))
-			dec.DisallowUnknownFields()
-			if err := dec.Decode(&scenarios); err != nil {
-				t.Fatalf("scenarios: %v", err)
-			}
+			file := expectedFile(t, f, name)
 			ran := 0
-			for _, s := range scenarios {
+			for _, s := range file.Scenarios {
 				reads, ok := readsOf(s)
 				if !ok {
 					continue
@@ -378,7 +294,7 @@ func TestScenarios(t *testing.T) {
 type read struct {
 	dataset string             // the change stream's dataset, or "" for the revision history
 	params  map[string]*string // a null parameter is not sent
-	expect  *stepExpect
+	expect  *expected.Expect
 }
 
 // readErrors are the errors ReadChanges returns, by their problem codes in
@@ -390,7 +306,7 @@ var readErrors = map[string]error{
 
 // readsOf returns the steps of a scenario as reads, or false when a step is
 // not one asRead accepts.
-func readsOf(s scenario) ([]read, bool) {
+func readsOf(s expected.Scenario) ([]read, bool) {
 	reads := make([]read, len(s.Steps))
 	for i, step := range s.Steps {
 		r, ok := asRead(step)
@@ -406,21 +322,21 @@ func readsOf(s scenario) ([]read, bool) {
 // another action or endpoint; a method, a credential, or a body; a parameter
 // that pages, or that the endpoint refuses; or an expectation of headers, of
 // raw bytes, or of an error other than those ReadChanges returns.
-func asRead(s scenarioStep) (read, bool) {
+func asRead(s expected.Step) (read, bool) {
 	if s.SetClock != nil || s.SetCredential != nil || s.Reset != nil || s.Request == nil || s.Expect == nil {
 		return read{}, false
 	}
 	req, exp := s.Request, s.Expect
 	if req.Method != nil && *req.Method != "GET" ||
-		req.Credential != nil || req.Authorization != nil || req.Body != nil ||
-		exp.Headers != nil || exp.BodySHA256 != nil || exp.BodyLines != nil {
+		req.Credential.Present || req.Authorization != nil || req.Body.Present ||
+		exp.Headers != nil || exp.BodySHA256 != nil || exp.BodyLines.Present {
 		return read{}, false
 	}
 	r := read{params: make(map[string]*string, len(req.Query)), expect: exp}
 	var selecting []string
-	if req.Path == "/v1/revisions" {
+	if *req.Path == "/v1/revisions" {
 		selecting = []string{"series_id", "period_start", "period_end", "available_as_of"}
-	} else if dataset, ok := changesDataset(req.Path); ok {
+	} else if dataset, ok := changesDataset(*req.Path); ok {
 		r.dataset = dataset
 		selecting = []string{"after", "limit"}
 	} else {
@@ -440,7 +356,8 @@ func asRead(s scenarioStep) (read, bool) {
 		}
 	}
 	if exp.Code == nil {
-		return r, exp.Status == 200 // HTTP's OK
+		// The status must be 200, HTTP's OK.
+		return r, expected.Match("status", exp.Status.Value, json.Number("200")) == nil
 	}
 	_, ok := readErrors[*exp.Code]
 	return r, ok && r.dataset != ""
@@ -504,14 +421,17 @@ func runRead(t *testing.T, f *fixtures.Fixtures, h *History, clock time.Time, r 
 			"head_position": c.HeadPosition,
 		}
 	}
-	if r.expect.Body == nil {
+	if !r.expect.Body.Present {
 		return ""
 	}
-	return match("body", r.expect.Body, asJSON(t, body))
+	if d := expected.Match("body", r.expect.Body.Value, asJSON(t, body)); d != nil {
+		return d.String()
+	}
+	return ""
 }
 
-// asJSON returns v as a JSON value would decode: maps, slices, strings,
-// float64 numbers, booleans, and nil.
+// asJSON returns v as the runner decodes a response, with json.Number for
+// numbers, so that expected.Match compares it as the runner does.
 func asJSON(t *testing.T, v any) any {
 	t.Helper()
 	data, err := json.Marshal(v)
@@ -519,65 +439,10 @@ func asJSON(t *testing.T, v any) any {
 		t.Fatal(err)
 	}
 	var out any
-	if err := json.Unmarshal(data, &out); err != nil {
+	if err := expected.Decode(data, &out); err != nil {
 		t.Fatal(err)
 	}
 	return out
-}
-
-// match compares an expected value with an actual JSON value by the matching
-// rule of spec/conformance.md, and describes the first difference, or returns
-// "" when they match. An expected object matches an object with every member
-// it names, each matching; an expected array matches an array of the same
-// length whose elements match in order; any other value matches an equal
-// value of the same JSON type.
-func match(path string, expected, actual any) string {
-	switch e := expected.(type) {
-	case map[string]any:
-		a, ok := actual.(map[string]any)
-		if !ok {
-			return fmt.Sprintf("%s: expected an object, got %s", path, show(actual))
-		}
-		for _, k := range sortedKeys(e) {
-			v, ok := a[k]
-			if !ok {
-				return fmt.Sprintf("%s.%s: expected %s, got no member", path, k, show(e[k]))
-			}
-			if d := match(path+"."+k, e[k], v); d != "" {
-				return d
-			}
-		}
-		return ""
-	case []any:
-		a, ok := actual.([]any)
-		if !ok {
-			return fmt.Sprintf("%s: expected an array, got %s", path, show(actual))
-		}
-		for i := range min(len(e), len(a)) {
-			if d := match(fmt.Sprintf("%s[%d]", path, i), e[i], a[i]); d != "" {
-				return d
-			}
-		}
-		if len(e) != len(a) {
-			return fmt.Sprintf("%s: expected %d elements, got %d: %s", path, len(e), len(a), show(actual))
-		}
-		return ""
-	default:
-		// A string, float64, bool, or nil: the interfaces are equal only when
-		// both the JSON type and the value are.
-		if expected != actual {
-			return fmt.Sprintf("%s: expected %s, got %s", path, show(expected), show(actual))
-		}
-		return ""
-	}
-}
-
-func show(v any) string {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Sprint(v)
-	}
-	return string(data)
 }
 
 func sortedKeys[V any](m map[string]V) []string {

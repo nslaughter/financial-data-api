@@ -14,12 +14,6 @@ import (
 // still fit the timestamp format.
 var MaxClock = time.Date(9999, 12, 30, 23, 59, 59, 0, time.UTC)
 
-// The kinds of credential in fixtures/credentials.json.
-const (
-	customerKind    = "customer"
-	testControlKind = "test_control"
-)
-
 // credential is a credential as the server holds it. Its key and kind never
 // change; test control changes whether it is active and its datasets.
 type credential struct {
@@ -176,7 +170,7 @@ func (s *state) changeCredential(id string, change credentialChange, datasetExis
 	if !ok {
 		return nil, notFound("There is no credential %q.", id)
 	}
-	if c.kind != customerKind {
+	if c.kind != fixtures.CustomerKind {
 		return nil, invalidParameter("credential_id", "%s is a %s credential; only a customer credential can be changed.", id, c.kind)
 	}
 	var datasets []string

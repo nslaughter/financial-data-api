@@ -7,16 +7,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nslaughter/financial-data-api/internal/expected"
 	"github.com/nslaughter/financial-data-api/internal/fixtures"
 )
 
 func TestPositionBeforeAnyRevision(t *testing.T) {
 	f, h := load(t)
 	first := timestamp(t, f.Revisions[0].AvailableAt)
-	if got := h.Position(streamDataset, first.Add(-time.Second)); got != 0 {
+	if got := h.Position(expected.StreamDataset, first.Add(-time.Second)); got != 0 {
 		t.Errorf("position %d before the first revision, want 0", got)
 	}
-	if got := h.Position(streamDataset, first); got != f.Revisions[0].Sequence {
+	if got := h.Position(expected.StreamDataset, first); got != f.Revisions[0].Sequence {
 		t.Errorf("position %d at the first revision, want %d", got, f.Revisions[0].Sequence)
 	}
 	if got := h.Position("no-such-dataset", first); got != 0 {
@@ -29,7 +30,7 @@ func TestPositionBeforeAnyRevision(t *testing.T) {
 // available_as_of query for T selects at a later position.
 func TestCutoffMatchesPositionForItsTime(t *testing.T) {
 	f, h := load(t)
-	head := h.Position(streamDataset, timestamp(t, defaultClock))
+	head := h.Position(expected.StreamDataset, timestamp(t, defaultClock))
 	for _, r := range f.Revisions {
 		at := timestamp(t, r.AvailableAt)
 		for _, cutoff := range []time.Time{at.Add(-time.Second), at} {
@@ -40,11 +41,11 @@ func TestCutoffMatchesPositionForItsTime(t *testing.T) {
 			})
 			atPosition := h.Observations(Query{
 				SeriesID: r.SeriesID,
-				Position: h.Position(streamDataset, cutoff),
+				Position: h.Position(expected.StreamDataset, cutoff),
 			})
 			if !reflect.DeepEqual(atCutoff, atPosition) {
 				t.Errorf("at %s: available_as_of selects %v, the position selects %v",
-					cutoff.Format(timestampLayout), ids(atCutoff), ids(atPosition))
+					cutoff.Format(fixtures.TimestampLayout), ids(atCutoff), ids(atPosition))
 			}
 		}
 	}
@@ -52,7 +53,7 @@ func TestCutoffMatchesPositionForItsTime(t *testing.T) {
 
 func TestPeriodRangeMatchesWholePeriods(t *testing.T) {
 	_, h := load(t)
-	head := h.Position(streamDataset, timestamp(t, defaultClock))
+	head := h.Position(expected.StreamDataset, timestamp(t, defaultClock))
 	tests := []struct {
 		start, end string
 		want       []string // period_start of each result
@@ -78,7 +79,7 @@ func TestPeriodRangeMatchesWholePeriods(t *testing.T) {
 
 func TestRevisionsAreOrderedByPeriodThenNumber(t *testing.T) {
 	f, h := load(t)
-	head := h.Position(streamDataset, timestamp(t, defaultClock))
+	head := h.Position(expected.StreamDataset, timestamp(t, defaultClock))
 	got := h.Revisions(Query{SeriesID: "activity-index", Position: head})
 	if len(got) != len(f.Revisions) {
 		t.Fatalf("%d revisions, want every one of the %d", len(got), len(f.Revisions))
@@ -108,7 +109,7 @@ func TestPublishedAsOfConsidersOnlyItsPosition(t *testing.T) {
 			SeriesID:    "activity-index",
 			PeriodStart: &start,
 			PeriodEnd:   &end,
-			Position:    h.Position(streamDataset, timestamp(t, clock)),
+			Position:    h.Position(expected.StreamDataset, timestamp(t, clock)),
 			Cutoff:      cutoff,
 		})
 		if len(got) != 1 || got[0].Value == nil || *got[0].Value != want {
@@ -126,7 +127,7 @@ func TestReadChangesRetention(t *testing.T) {
 	}
 
 	// One second before the first event expires, position 0 continues.
-	got, err := h.ReadChanges(streamDataset, expiry.Add(-time.Second), 0, 1)
+	got, err := h.ReadChanges(expected.StreamDataset, expiry.Add(-time.Second), 0, 1)
 	if err != nil {
 		t.Fatalf("before expiry: %v", err)
 	}
@@ -136,10 +137,10 @@ func TestReadChangesRetention(t *testing.T) {
 
 	// At the instant it expires, position 0 needs it and has expired, but
 	// the position after it still continues.
-	if _, err := h.ReadChanges(streamDataset, expiry, 0, 1); !errors.Is(err, ErrPositionExpired) {
+	if _, err := h.ReadChanges(expected.StreamDataset, expiry, 0, 1); !errors.Is(err, ErrPositionExpired) {
 		t.Errorf("at expiry, after 0: error %v, want ErrPositionExpired", err)
 	}
-	got, err = h.ReadChanges(streamDataset, expiry, first.Sequence, 1)
+	got, err = h.ReadChanges(expected.StreamDataset, expiry, first.Sequence, 1)
 	if err != nil {
 		t.Fatalf("at expiry, after %d: %v", first.Sequence, err)
 	}
@@ -151,7 +152,7 @@ func TestReadChangesRetention(t *testing.T) {
 	// with nothing to read, and the position before it has expired.
 	last, prev := f.Revisions[len(f.Revisions)-1], f.Revisions[len(f.Revisions)-2]
 	late := timestamp(t, last.AvailableAt).Add(2 * Retention)
-	got, err = h.ReadChanges(streamDataset, late, last.Sequence, defaultLimit)
+	got, err = h.ReadChanges(expected.StreamDataset, late, last.Sequence, defaultLimit)
 	if err != nil {
 		t.Fatalf("caught up: %v", err)
 	}
@@ -159,7 +160,7 @@ func TestReadChangesRetention(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("caught up: %+v, want %+v", got, want)
 	}
-	if _, err := h.ReadChanges(streamDataset, late, prev.Sequence, defaultLimit); !errors.Is(err, ErrPositionExpired) {
+	if _, err := h.ReadChanges(expected.StreamDataset, late, prev.Sequence, defaultLimit); !errors.Is(err, ErrPositionExpired) {
 		t.Errorf("one behind the head: error %v, want ErrPositionExpired", err)
 	}
 }
@@ -167,11 +168,11 @@ func TestReadChangesRetention(t *testing.T) {
 func TestReadChangesAheadOfTheStream(t *testing.T) {
 	f, h := load(t)
 	at := timestamp(t, f.Revisions[0].AvailableAt)
-	head := h.Position(streamDataset, at)
-	if _, err := h.ReadChanges(streamDataset, at, head+1, defaultLimit); !errors.Is(err, ErrPositionAhead) {
+	head := h.Position(expected.StreamDataset, at)
+	if _, err := h.ReadChanges(expected.StreamDataset, at, head+1, defaultLimit); !errors.Is(err, ErrPositionAhead) {
 		t.Errorf("after %d with head %d: error %v, want ErrPositionAhead", head+1, head, err)
 	}
-	got, err := h.ReadChanges(streamDataset, at, head, defaultLimit)
+	got, err := h.ReadChanges(expected.StreamDataset, at, head, defaultLimit)
 	if err != nil {
 		t.Fatalf("after the head: %v", err)
 	}
@@ -223,25 +224,25 @@ func TestPositionsAreSequences(t *testing.T) {
 	for _, r := range f.Revisions {
 		at := timestamp(t, r.AvailableAt)
 		for _, tm := range []time.Time{at.Add(-time.Second), at} {
-			if got, want := g.Position(streamDataset, tm), gapFactor*h.Position(streamDataset, tm); got != want {
-				t.Errorf("position %d at %s, want %d", got, tm.Format(timestampLayout), want)
+			if got, want := g.Position(expected.StreamDataset, tm), gapFactor*h.Position(expected.StreamDataset, tm); got != want {
+				t.Errorf("position %d at %s, want %d", got, tm.Format(fixtures.TimestampLayout), want)
 			}
 		}
 	}
 
 	now := timestamp(t, defaultClock)
-	head := h.Position(streamDataset, now)
+	head := h.Position(expected.StreamDataset, now)
 	for p := int64(0); p <= head; p++ {
 		positions := []int64{gapFactor * p}
 		if p < head {
 			positions = append(positions, gapFactor*p+gapFactor/2)
 		}
 		for _, gp := range positions {
-			if got, want := g.Snapshot(streamDataset, gp), renumber(h.Snapshot(streamDataset, p)); !reflect.DeepEqual(got, want) {
+			if got, want := g.Snapshot(expected.StreamDataset, gp), renumber(h.Snapshot(expected.StreamDataset, p)); !reflect.DeepEqual(got, want) {
 				t.Errorf("snapshot at %d: %v, want %v", gp, ids(got), ids(want))
 			}
 			for _, s := range f.Series {
-				if s.DatasetID != streamDataset {
+				if s.DatasetID != expected.StreamDataset {
 					continue
 				}
 				gq := Query{SeriesID: s.SeriesID, Position: gp}
@@ -253,11 +254,11 @@ func TestPositionsAreSequences(t *testing.T) {
 					t.Errorf("%s revisions at %d: %v, want %v", s.SeriesID, gp, ids(got), ids(want))
 				}
 			}
-			got, err := g.ReadChanges(streamDataset, now, gp, 2)
+			got, err := g.ReadChanges(expected.StreamDataset, now, gp, 2)
 			if err != nil {
 				t.Fatalf("read after %d: %v", gp, err)
 			}
-			want, err := h.ReadChanges(streamDataset, now, p, 2)
+			want, err := h.ReadChanges(expected.StreamDataset, now, p, 2)
 			if err != nil {
 				t.Fatalf("read after %d without gaps: %v", p, err)
 			}
@@ -273,7 +274,7 @@ func TestPositionsAreSequences(t *testing.T) {
 			}
 		}
 	}
-	if _, err := g.ReadChanges(streamDataset, now, gapFactor*head+1, defaultLimit); !errors.Is(err, ErrPositionAhead) {
+	if _, err := g.ReadChanges(expected.StreamDataset, now, gapFactor*head+1, defaultLimit); !errors.Is(err, ErrPositionAhead) {
 		t.Errorf("after %d with head %d: error %v, want ErrPositionAhead", gapFactor*head+1, gapFactor*head, err)
 	}
 }
@@ -287,10 +288,10 @@ func TestEmptyResultsAreNotNil(t *testing.T) {
 	if got := h.Revisions(q); got == nil {
 		t.Error("Revisions returned nil")
 	}
-	if got := h.Snapshot(streamDataset, 0); got == nil {
+	if got := h.Snapshot(expected.StreamDataset, 0); got == nil {
 		t.Error("Snapshot returned nil")
 	}
-	if len(ExportFile(h.Snapshot(streamDataset, 0))) != 0 {
+	if len(ExportFile(h.Snapshot(expected.StreamDataset, 0))) != 0 {
 		t.Error("the export file of an empty snapshot is not empty")
 	}
 }

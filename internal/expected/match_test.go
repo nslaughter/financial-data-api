@@ -1,15 +1,15 @@
-package conformance
+package expected
 
 import (
 	"encoding/json"
 	"testing"
 )
 
-// jsonValue decodes text as the runner decodes JSON, with json.Number.
+// jsonValue decodes text as Decode decodes JSON, with json.Number.
 func jsonValue(t *testing.T, text string) any {
 	t.Helper()
 	var v any
-	if err := decodeJSON([]byte(text), &v); err != nil {
+	if err := Decode([]byte(text), &v); err != nil {
 		t.Fatalf("%s: %v", text, err)
 	}
 	return v
@@ -48,28 +48,35 @@ func TestMatch(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := match("v", jsonValue(t, tt.expected), jsonValue(t, tt.actual))
+			d := Match("v", jsonValue(t, tt.expected), jsonValue(t, tt.actual))
 			if tt.at == "" {
 				if d != nil {
-					t.Fatalf("got a difference at %s: expected %s, actual %s", d.at, d.expected, d.actual)
+					t.Fatalf("got a difference at %s: expected %s, actual %s", d.At, d.Expected, d.Actual)
 				}
 				return
 			}
 			if d == nil {
 				t.Fatalf("matched; want a difference at %s", tt.at)
 			}
-			if d.at != tt.at || d.expected != tt.wantExp || d.actual != tt.wantAct {
+			if d.At != tt.at || d.Expected != tt.wantExp || d.Actual != tt.wantAct {
 				t.Fatalf("got %s: expected %s, actual %s; want %s: expected %s, actual %s",
-					d.at, d.expected, d.actual, tt.at, tt.wantExp, tt.wantAct)
+					d.At, d.Expected, d.Actual, tt.at, tt.wantExp, tt.wantAct)
 			}
 		})
 	}
 }
 
 func TestMatchWithoutPrefix(t *testing.T) {
-	d := match("", jsonValue(t, `{"a": 1}`), jsonValue(t, `{"a": 2}`))
-	if d == nil || d.at != "a" {
+	d := Match("", jsonValue(t, `{"a": 1}`), jsonValue(t, `{"a": 2}`))
+	if d == nil || d.At != "a" {
 		t.Fatalf("got %+v, want a difference at a", d)
+	}
+}
+
+func TestDifferenceString(t *testing.T) {
+	d := Match("body", jsonValue(t, `{"value": "102.0"}`), jsonValue(t, `{"value": "102"}`))
+	if got, want := d.String(), `body.value: expected "102.0", actual "102"`; got != want {
+		t.Fatalf("got %q, want %q", got, want)
 	}
 }
 
@@ -78,49 +85,21 @@ func TestRenderShortensLongValues(t *testing.T) {
 	for i := range long {
 		long[i] = "obs"
 	}
-	got := render(long)
+	got := Render(long)
 	if len(got) > maxRendered+len("…") || got[len(got)-len("…"):] != "…" {
-		t.Fatalf("render returned %d bytes ending %q", len(got), got[len(got)-5:])
-	}
-}
-
-func TestDecimal(t *testing.T) {
-	tests := []struct{ in, want string }{
-		{"36", "36"},
-		{"36.0", "36"},
-		{"3.6e1", "36"},
-		{"3.6E+1", "36"},
-		{"3600e-2", "36"},
-		{"0.1e1", "1"},
-		{"1e3", "1000"},
-		{"-0", "0"},
-		{"-0.0e5", "0"},
-		{"1.50", "1.5"},
-		{"15e-1", "1.5"},
-		{"1.5e-3", "0.0015"},
-		{"-2.5E+0", "-2.5"},
-		{"123456789012345678901234567890", "123456789012345678901234567890"},
-	}
-	for _, tt := range tests {
-		got, err := decimal(json.Number(tt.in))
-		if err != nil || got != tt.want {
-			t.Errorf("decimal(%s) = %q, %v; want %q", tt.in, got, err, tt.want)
-		}
-	}
-	if _, err := decimal("1e2000000"); err == nil {
-		t.Error("decimal(1e2000000): want an error")
+		t.Fatalf("Render returned %d bytes ending %q", len(got), got[len(got)-5:])
 	}
 }
 
 func TestInteger(t *testing.T) {
 	for _, in := range []string{"36", "36.0", "3.6e1", "360e-1"} {
-		if n, ok := integer(json.Number(in)); !ok || n.Int64() != 36 {
-			t.Errorf("integer(%s) = %v, %v; want 36", in, n, ok)
+		if n, ok := Integer(json.Number(in)); !ok || n.Int64() != 36 {
+			t.Errorf("Integer(%s) = %v, %v; want 36", in, n, ok)
 		}
 	}
 	for _, in := range []string{"36.5", "3.65e1", ""} {
-		if n, ok := integer(json.Number(in)); ok {
-			t.Errorf("integer(%q) = %v; want no integer", in, n)
+		if n, ok := Integer(json.Number(in)); ok {
+			t.Errorf("Integer(%q) = %v; want no integer", in, n)
 		}
 	}
 }

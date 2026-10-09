@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/nslaughter/financial-data-api/internal/expected"
 )
 
 // testBodies returns bodies with step c's body: an export manifest.
@@ -84,8 +86,8 @@ func TestResolveLeavesTheValueUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d := match("", jsonValue(t, `{"id": "exp_1", "list": [36, 1], "${c.export_id}": "key"}`), got); d != nil {
-		t.Fatalf("resolved value differs at %s: expected %s, got %s", d.at, d.expected, d.actual)
+	if d := expected.Match("", jsonValue(t, `{"id": "exp_1", "list": [36, 1], "${c.export_id}": "key"}`), got); d != nil {
+		t.Fatalf("resolved value differs at %s: expected %s, got %s", d.At, d.Expected, d.Actual)
 	}
 	if in.(map[string]any)["id"] != "${c.export_id}" {
 		t.Fatal("resolve changed its argument")

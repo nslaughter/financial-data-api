@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	financialdataapi "github.com/nslaughter/financial-data-api"
 	"github.com/nslaughter/financial-data-api/internal/conformance"
+	"github.com/nslaughter/financial-data-api/internal/expected"
 )
 
 // TestConformance runs every file of expected/ at stage 2 against the server
@@ -13,7 +13,7 @@ import (
 // response against spec/openapi.yaml. Every check must pass, except a
 // scenario whose stages member leaves out stage 2, which the runner skips.
 func TestConformance(t *testing.T) {
-	all, err := conformance.Load(financialdataapi.Expected())
+	all, err := expected.Load()
 	if err != nil {
 		t.Fatal(err)
 	}

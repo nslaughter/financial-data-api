@@ -124,10 +124,10 @@ type call struct {
 
 func (s *Server) routeTable(testControl bool) []route {
 	customer := func(h func(http.ResponseWriter, *call) *problem) endpoint {
-		return endpoint{auth: customerKind, handle: h}
+		return endpoint{auth: fixtures.CustomerKind, handle: h}
 	}
 	test := func(h func(http.ResponseWriter, *call) *problem) endpoint {
-		return endpoint{auth: testControlKind, handle: h}
+		return endpoint{auth: fixtures.TestControlKind, handle: h}
 	}
 	routes := []route{
 		{template: "/v1/meta", endpoints: map[string]endpoint{http.MethodGet: {handle: s.meta}}},
@@ -285,7 +285,7 @@ func (s *Server) authenticate(r *http.Request, kind string) (moment, *problem) {
 		return moment{}, unauthenticated("The key is not known.")
 	case !cred.active:
 		return moment{}, unauthenticated("The key is inactive.")
-	case cred.kind != kind && kind == customerKind:
+	case cred.kind != kind && kind == fixtures.CustomerKind:
 		return moment{}, unauthenticated("A test-control key is not accepted under /v1; send a customer key.")
 	case cred.kind != kind:
 		return moment{}, unauthenticated("A customer key is not accepted under /test; send the test-control key.")

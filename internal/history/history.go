@@ -36,12 +36,6 @@ var (
 	ErrPositionExpired = errors.New("position has expired")
 )
 
-// The formats of the fixtures' dates and timestamps.
-const (
-	dateLayout      = "2006-01-02"
-	timestampLayout = "2006-01-02T15:04:05Z"
-)
-
 // History holds every dataset's revisions and every series' release
 // calendar. It does not change after New, so it is safe for concurrent use.
 type History struct {
@@ -81,18 +75,19 @@ func New(f *fixtures.Fixtures) (*History, error) {
 		}
 		rev := revision{Revision: r}
 		times := []struct {
-			dst           *time.Time
-			layout, value string
+			dst         *time.Time
+			parse       func(string) (time.Time, bool)
+			name, value string
 		}{
-			{&rev.periodStart, dateLayout, r.PeriodStart},
-			{&rev.periodEnd, dateLayout, r.PeriodEnd},
-			{&rev.publishedAt, timestampLayout, r.PublishedAt},
-			{&rev.availableAt, timestampLayout, r.AvailableAt},
+			{&rev.periodStart, fixtures.ParseDate, "period_start", r.PeriodStart},
+			{&rev.periodEnd, fixtures.ParseDate, "period_end", r.PeriodEnd},
+			{&rev.publishedAt, fixtures.ParseTimestamp, "published_at", r.PublishedAt},
+			{&rev.availableAt, fixtures.ParseTimestamp, "available_at", r.AvailableAt},
 		}
 		for _, tm := range times {
-			t, err := time.Parse(tm.layout, tm.value)
-			if err != nil {
-				return nil, fmt.Errorf("revision %s: %w", r.RevisionID, err)
+			t, ok := tm.parse(tm.value)
+			if !ok {
+				return nil, fmt.Errorf("revision %s: %s %q is not valid", r.RevisionID, tm.name, tm.value)
 			}
 			*tm.dst = t
 		}
@@ -100,12 +95,12 @@ func New(f *fixtures.Fixtures) (*History, error) {
 	}
 	for _, e := range f.Releases {
 		rel := release{Release: e}
-		var err error
-		if rel.periodStart, err = time.Parse(dateLayout, e.PeriodStart); err != nil {
-			return nil, fmt.Errorf("release of %s for %s: %w", e.SeriesID, e.PeriodStart, err)
+		var ok bool
+		if rel.periodStart, ok = fixtures.ParseDate(e.PeriodStart); !ok {
+			return nil, fmt.Errorf("release of %s: period_start %q is not valid", e.SeriesID, e.PeriodStart)
 		}
-		if rel.periodEnd, err = time.Parse(dateLayout, e.PeriodEnd); err != nil {
-			return nil, fmt.Errorf("release of %s for %s: %w", e.SeriesID, e.PeriodStart, err)
+		if rel.periodEnd, ok = fixtures.ParseDate(e.PeriodEnd); !ok {
+			return nil, fmt.Errorf("release of %s for %s: period_end %q is not valid", e.SeriesID, e.PeriodStart, e.PeriodEnd)
 		}
 		h.releases[e.SeriesID] = append(h.releases[e.SeriesID], rel)
 	}
