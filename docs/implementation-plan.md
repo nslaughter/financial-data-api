@@ -378,6 +378,13 @@ Out of scope: the repeated test setup helpers, which the conventions allow.
 ## After stage 2
 
 - The monitor (stage 3) uses the published image and runs `release-timing`.
+- Contract 0.4.0 adds a request ID header to every response, errors
+  included. The owner decided this on October 5, 2026, in
+  [decision D7](https://github.com/nslaughter/financial-data-sdk-python/blob/main/spec/client.md#d7-request-ids)
+  of the Python SDK's client contract, which assumes the header is named
+  `Request-Id`. The SDK's step 11 waits for a `contract-v0.4.0` tag and an
+  image that implements it. The change needs that contract version and a
+  step in this plan before any work starts.
 - The migration stage's breaking change is an open question in the
   [data contract](../spec/data-contract.md#open-questions); it needs a
   decision and a new contract version before any work starts. The operator
