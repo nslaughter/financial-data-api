@@ -176,7 +176,7 @@ the server and its image on every pull request.
 | The eligible version at each cutoff matches independent fixtures, including the gap between publication and customer availability. | Met | `august-2026-at-cutoffs`, `late-source-release`, `published-as-of` |
 | Pagination returns a consistent result while data changes during traversal. | Met | `pagination` |
 | Unauthorized queries, resumed pages, and exports are refused. | Met | `access-control`, `exports` |
-| Bulk delivery reconciles with subsequent updates, including a revision published during an export. | Met | `export-handoff` |
+| Bulk delivery reconciles with subsequent updates, including a revision that becomes available during an export. | Met | `export-handoff` |
 | The SDK workflow runs against the expanded API. | Not yet | The SDKs' runners, once they are built |
 
 The [Python SDK](https://github.com/nslaughter/financial-data-sdk-python) is
