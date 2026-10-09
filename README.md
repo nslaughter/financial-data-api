@@ -119,22 +119,23 @@ every field.
    This query returns 102.4, although the revision has since replaced it.
    Without the cutoff, current research receives 102.1.
 
-## Two scenarios show where the contract protects the customer
+## Two cases show where the contract protects the customer
 
-Both are scenarios in the expected results, and the API passes them.
+Both are files in the [expected results](expected), and the API passes them.
 
 The first, [`export-handoff`](expected/export-handoff.json), makes the
-September 10 revision available while an export is being written. If the
-provider took the "start updates here" position after the file finished, the
-revision would be absent from the snapshot and already behind the update
-cursor, and a customer who asked only for later periods would miss it too.
-The scenario shows both failures, then shows that the manifest's position,
-taken with its snapshot, delivers the revision through the change stream.
+September 10 revision available while an export is being written. Its first
+scenario shows that the manifest's position, taken with its snapshot,
+delivers the revision through the change stream. The other two show how the
+revision is lost otherwise. If the provider took the "start updates here"
+position after the file finished, the revision would be absent from the
+snapshot and already behind the update cursor. A customer who asked only for
+later periods would miss it too.
 
 The second, [`august-2026-at-cutoffs`](expected/august-2026-at-cutoffs.json),
-shows a later revision entering historical research through a query that
-lacks an availability cutoff, and how the `available_as_of` query keeps the
-September 4 answer intact.
+is a set of query checks. They show a later revision entering historical
+research through a query that lacks an availability cutoff, and how the
+`available_as_of` query keeps the September 4 answer intact.
 
 Step-by-step examples that tell these stories for a reader, not a test
 runner, are planned.
