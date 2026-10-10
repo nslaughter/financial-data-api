@@ -383,6 +383,17 @@ Out of scope: response types and seams (step 13), and an interface between
 `internal/api` and `internal/history`, which the conventions leave concrete
 until a test needs a fake.
 
+The owner settled a question raised in this step's pull request on
+October 10, 2026, and [#24](https://github.com/nslaughter/financial-data-api/pull/24)
+records it:
+
+- The error of `state.reset`, a failure of `crypto/rand` to produce a
+  page-token key, stays untested. `setClock` and `changeCredential` have a
+  test of each error they return. A test of `reset`'s error would need a
+  seam in the state that only a test sets, to fake a failure that
+  practically never happens. The error keeps its mapping to
+  `500 internal` from `main`.
+
 ### 13. Embed the fixture types and remove the smaller repeats
 
 - The dataset and series responses embed `fixtures.Dataset` and
