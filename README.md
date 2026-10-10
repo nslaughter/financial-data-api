@@ -9,19 +9,20 @@ fintech, data pipelines, observability, and infrastructure, informed by a
 background in investment research. I help teams turn datasets into APIs whose
 meaning and delivery behavior customers can depend on.
 
-**Status:** The full API, stage 2, with exports, the revision history, and
-the release calendar, is implemented in Go and passes the stage 2 conformance
-suite. Release `v0.2.0` publishes it as the container image
-`ghcr.io/nslaughter/financial-data-api:0.2.0`, and release `v0.1.0` published
-the stage 1 demo API as `0.1.0`; see [Run the API](#run-the-api). This
-repository also contains the
-[data contract](spec/data-contract.md) (version 0.3.0, tagged
-`contract-v0.3.0`) with its
-fixtures and expected results, the [API specification](spec/api.md) and its
+**Status:** The full API is implemented in Go and passes its conformance
+suite on every pull request. Release `v0.2.0` publishes it as the container
+image `ghcr.io/nslaughter/financial-data-api:0.2.0`, and release `v0.1.0`
+published the smaller demo API as `0.1.0`; see [Run the API](#run-the-api).
+This repository also holds the [data contract](spec/data-contract.md)
+(version 0.3.0, tagged `contract-v0.3.0`) with its fixtures and expected
+results, the [API specification](spec/api.md) and its
 [OpenAPI form](spec/openapi.yaml), the [conformance format](spec/conformance.md),
-and the [implementation plan](docs/implementation-plan.md).
-The runnable demonstrations are planned. The dataset is synthetic, and this
-is a demonstration project, not client work.
+and the [implementation plan](docs/implementation-plan.md), whose remaining
+steps bring the code in line with its conventions without changing what it
+serves. The SDKs and the monitor that act as the API's customers are in
+development or planned; see
+[Where the demonstration stands](#where-the-demonstration-stands). The
+dataset is synthetic, and this is a demonstration project, not client work.
 
 ## What this project demonstrates
 
@@ -38,24 +39,25 @@ dataset once, keep it current, and reproduce earlier research:
   could retrieve at that time. A second reconstructs what the source had
   published by then, with the provider's processing errors corrected.
 - **Pagination that cannot mix states.** Continuation tokens are bound to the
-  original snapshot, filters, API version, and position. An expired snapshot
-  requires a restart.
+  endpoint, the credential, every parameter, and the query's snapshot. An
+  expired snapshot requires a restart.
 - **Bulk delivery with a safe handoff to updates.** Each export identifies its
   snapshot and the matching position in the change stream, so a revision made
   during the export cannot fall between them.
 - **Access enforced on every path.** Entitlements are checked on queries,
   resumed pages, and exports.
-- **Working customers.** The [Python](https://github.com/nslaughter/financial-data-sdk-python),
-  [Go](https://github.com/nslaughter/financial-data-sdk-go), and
-  [TypeScript](https://github.com/nslaughter/financial-data-sdk-ts) SDKs
-  keep running against the API as it grows, and all three pass the same
-  contract checks.
+- **One conformance suite.** The [expected results](expected) state what
+  every implementation must return from the same fixtures. The runner in this
+  repository executes them over HTTP, checks the responses against the
+  OpenAPI document, and runs on every pull request, against the server and
+  against its container image.
 
-The API is the second of four stages in a demonstration for financial data
-providers. The small demo API the SDKs use in the first stage lives here from
-the start and grows into the full API in the second stage, and the
+The API covers the first two of four stages in a demonstration for financial
+data providers. In the first, a small demo API serves the SDKs; it lives here
+and grew into the full API in the second. The SDKs act as the API's
+customers. In the third stage, the
 [financial-data-api-monitor](https://github.com/nslaughter/financial-data-api-monitor)
-then checks what customers can retrieve from it. A final stage makes a
+will check what customers can retrieve from it, and a final stage will make a
 deliberate contract change to the API and SDKs.
 
 ## A customer can make successful requests and still have the wrong dataset
@@ -67,7 +69,8 @@ Every request succeeds, and the local copy stays wrong.
 
 This project uses a fictional monthly activity index to make that problem
 concrete. Its August 2026 value is published as 102.4 on September 3 and
-revised to 102.1 on September 10. A proposed record looks like this:
+revised to 102.1 on September 10. The first version is this record in the
+[fixtures](fixtures/revisions.json):
 
 ```json
 {
@@ -97,43 +100,56 @@ acquisition, and `available_at` when an entitled customer could first retrieve
 the record through the API. The [data contract](spec/data-contract.md) defines
 every field.
 
-## How a customer will load, update, and reproduce the data
+## How a customer loads, updates, and reproduces the data
 
 1. Load a consistent snapshot from a bulk export. Its manifest carries the
    snapshot identity, the matching start position in the change stream, the
-   schema version, coverage, and file checksums.
+   API and contract versions, coverage, and file checksums.
 2. Verify the files, then apply releases, revisions, and withdrawals from that
    position. Each page of events and its next position are saved in one local
    transaction, and event identities let a repeated page be recognized.
-3. Query the versions available at an earlier cutoff and compare the answer
-   with independently prepared fixture records:
+3. Query the versions available at an earlier cutoff. The
+   [expected results](expected/august-2026-at-cutoffs.json), prepared before
+   the API was written, give the answer at each cutoff:
 
    ```text
    GET /v1/observations?series_id=activity-index&period_start=2026-08-01&period_end=2026-09-01&available_as_of=2026-09-04T00:00:00Z
    ```
 
-   After the revision, this query should still return 102.4. Without the
-   cutoff, current research receives 102.1.
+   This query returns 102.4, although the revision has since replaced it.
+   Without the cutoff, current research receives 102.1.
 
-## Two walkthroughs show where the contract protects the customer
+## Two cases show where the contract protects the customer
 
-The first introduces the September 10 revision while an export is being
-written. If the provider took the "start updates here" position after the file
-finished, the revision would be absent from the snapshot and already behind
-the update cursor. The walkthrough shows that failure, then shows how the
-manifest's consistent snapshot and position prevent it.
+Both are files in the [expected results](expected), and the API passes them.
 
-The second shows a later revision entering historical research through a
-query that lacks an availability cutoff, and how the `available_as_of` query
-keeps the September 4 answer intact.
+The first, [`export-handoff`](expected/export-handoff.json), makes the
+September 10 revision available while an export is being written. Its first
+scenario shows that the manifest's position, taken with its snapshot,
+delivers the revision through the change stream. The other two show how the
+revision is lost otherwise. If the provider took the "start updates here"
+position after the file finished, the revision would be absent from the
+snapshot and already behind the update cursor. A customer who asked only for
+later periods would miss it too.
+
+The second, [`august-2026-at-cutoffs`](expected/august-2026-at-cutoffs.json),
+is a set of query checks. They show a later revision entering historical
+research through a query that lacks an availability cutoff, and how the
+`available_as_of` query keeps the September 4 answer intact.
+
+Step-by-step examples that tell these stories for a reader, not a test
+runner, are planned.
 
 ## The contract has to cover delivery as well as field names
 
-The planned contract will describe identifiers, units, missing values, time
-semantics, revision history, access rules, and recovery limits. Query, export,
-and update examples will use the same dataset so their results can be compared.
+The [data contract](spec/data-contract.md) describes identifiers, units,
+missing values, time semantics, and revision history, and the
+[API specification](spec/api.md) adds access rules, pagination, retention,
+and recovery. The expected results use one dataset for queries, exports, and
+updates, so their results can be compared.
 
-Several delivery rules matter as much as the schema:
+Several delivery rules matter as much as the schema, and each has a check in
+the expected results:
 
 - Withdrawals are events in the history. Deleting the original row would
   destroy the answer to an earlier query.
@@ -143,34 +159,52 @@ Several delivery rules matter as much as the schema:
 - Change-stream positions have a documented retention period. An expired
   cursor reports that the customer needs a fresh snapshot instead of skipping
   ahead.
-- Retrying an export download fetches the same retained files. Regenerating an
-  export creates a new snapshot identity and update position.
+- Retrying an export download fetches the same retained file. Regenerating an
+  export creates a new snapshot identity, at the head position when it is
+  created.
 - A token issued before access was revoked cannot grant that access on a
   resumed request, and export files are protected like query endpoints.
 
-## The demonstration is complete when
+## Where the demonstration stands
 
-- The SDK workflow runs against the expanded API.
-- The eligible version at each cutoff matches independent fixtures, including
-  the gap between publication and customer availability.
-- Pagination returns a consistent result while data changes during traversal.
-- Unauthorized queries, resumed pages, and exports are refused.
-- Bulk delivery reconciles with subsequent updates, including a revision
-  published during an export.
+The demonstration is complete when these criteria hold. The API meets the
+four that depend on it alone, and the conformance suite checks them against
+the server and its image on every pull request.
 
-## What the repository will contain
+| Criterion | Status | Checked by |
+| --- | --- | --- |
+| The eligible version at each cutoff matches independent fixtures, including the gap between publication and customer availability. | Met | `august-2026-at-cutoffs`, `late-source-release`, `published-as-of` |
+| Pagination returns a consistent result while data changes during traversal. | Met | `pagination` |
+| Unauthorized queries, resumed pages, and exports are refused. | Met | `access-control`, `exports` |
+| Bulk delivery reconciles with subsequent updates, including a revision that becomes available during an export. | Met | `export-handoff` |
+| The SDK workflow runs against the expanded API. | Not yet | The SDKs' runners, once they are built |
 
-- An API specification and data dictionary. These are written: see
-  [`spec/`](spec).
-- A local startup command and seeded fixtures. These are here: see
-  [Run the API](#run-the-api).
+The [Python SDK](https://github.com/nslaughter/financial-data-sdk-python) is
+in development: it queries the catalog, observations, and the change stream,
+and it doesn't run the shared checks against the API image yet. The
+[Go](https://github.com/nslaughter/financial-data-sdk-go) and
+[TypeScript](https://github.com/nslaughter/financial-data-sdk-ts) SDKs and the
+[monitor](https://github.com/nslaughter/financial-data-api-monitor) are
+project briefs so far.
+
+## What's in this repository
+
+| Path | Contents |
+| --- | --- |
+| [`spec/`](spec) | The data contract, the API specification and its OpenAPI form, and the conformance format. The API specification gives the [retention](spec/api.md#retention) periods and what a client does when one expires. |
+| [`fixtures/`](fixtures) | The synthetic dataset: its catalog, revisions, release calendar, and demonstration credentials. |
+| [`expected/`](expected) | The expected results: one conformance suite for the API, the SDKs, and the monitor. |
+| [`cmd/server`](cmd/server) | The API server. It and the packages it uses in [`internal/`](internal) need only Go's standard library. |
+| [`cmd/conformance`](cmd/conformance) | The conformance runner. |
+| [`.github/workflows`](.github/workflows), [`Dockerfile`](Dockerfile) | CI, which runs the tests and the conformance suite on every pull request, and the release workflow, which builds the image, checks its labels, runs the suite against it, and publishes it for a version tag. |
+| [`docs/implementation-plan.md`](docs/implementation-plan.md) | The pull requests that built the API, in order, and the decisions made along the way. |
+| [`AGENTS.md`](AGENTS.md) | The rules and conventions that implementation pull requests follow. |
+
+Still to come:
+
 - Query, export, and update examples.
-- Contract and authorization checks in CI. The conformance suite runs against
-  the server on every pull request, and the suite of the image's stage runs
-  against its container image on every pull request and before each release.
-- A tagged release that names the compatible SDK version.
-- Documented retention and recovery policies, and the limits of the historical
-  availability claims.
+- A tagged release that names the compatible SDK version, once an SDK passes
+  the shared checks.
 
 ## Run the API
 
@@ -182,6 +216,9 @@ reset state:
 ```sh
 docker run --rm -p 8080:8080 -e TEST_CONTROL=enabled ghcr.io/nslaughter/financial-data-api:0.2.0
 ```
+
+From a checkout of this repository, with Go 1.22 or later,
+`TEST_CONTROL=enabled go run ./cmd/server` starts the same server.
 
 The query from the example above, with a demonstration key from the
 fixtures, returns 102.4:
@@ -205,39 +242,51 @@ tagged `X.Y.Z`, after the conformance suite of its stage passes against it.
 Image `0.1.0` is the stage 1 demo API, which passes the suite with
 `--stage 1`.
 
-## A later contract change will test the maintenance work
+## What comes next
 
-In the fourth stage, the API makes a breaking change to its data model and
-introduces v2 beside v1. API v1 already uses explicit `published_at`,
-`period_start`, `period_end`, and `available_at` fields, so the change will be
-a different one; choosing it is the contract's
+In the third stage, the
+[monitor](https://github.com/nslaughter/financial-data-api-monitor) will run
+scheduled checks with ordinary customer access, including the release timing
+in [`release-timing`](expected/release-timing.json): how long after its
+scheduled time each release was published, and how long after that it became
+available.
+
+In the fourth stage, the API will make a breaking change to its data model
+and introduce v2 beside v1. API v1 already uses explicit `published_at`,
+`period_start`, `period_end`, and `available_at` fields, so the change will
+be a different one; choosing it is the contract's
 [open question](spec/data-contract.md#open-questions). Each query and export
-selects a version, and continuation tokens keep that choice through
-pagination. A request for an unsupported version fails with an explanation
-instead of falling back to a different data model.
+will select a version, and continuation tokens will keep that choice through
+pagination. As in v1 today, a request for an unsupported version will fail
+with an explanation instead of falling back to a different data model.
 
-The checks run through direct HTTP requests as well as the SDK, so a
+The checks will run through direct HTTP requests as well as the SDK, so a
 client-side workaround cannot hide a server error. The recovery rehearsal
-starts after a customer has already stored changed output: identify the
+will start after a customer has already stored changed output: identify the
 affected exports and snapshots, reissue the data, and repair the customer's
 local copy.
 
-## What the historical results will and will not establish
+## What the historical results establish, and what they don't
 
 Availability here means an entitled customer could retrieve a record through
-the API. It does not establish when any customer actually downloaded it. If the
-provider later corrects a conversion error, the API must distinguish the data
-it served from history reconstructed with the correction. The demonstration
-runs locally against synthetic data and makes no performance or scale claims.
+the API. It does not establish when any customer actually downloaded it. When
+the provider corrects a conversion error, the API distinguishes the data it
+served, which `available_as_of` returns, from the history reconstructed with
+the correction, which `published_as_of` returns. The
+[data contract](spec/data-contract.md#reconstructing-what-the-source-had-published)
+states the limits of that reconstruction. The demonstration runs locally
+against synthetic data and makes no performance or scale claims.
 
 ## Related projects and writing
 
-- [financial-data-sdk-python](https://github.com/nslaughter/financial-data-sdk-python),
-  [financial-data-sdk-go](https://github.com/nslaughter/financial-data-sdk-go), and
+- [financial-data-sdk-python](https://github.com/nslaughter/financial-data-sdk-python):
+  the first of the clients that act as this API's customers, in development.
+- [financial-data-sdk-go](https://github.com/nslaughter/financial-data-sdk-go) and
   [financial-data-sdk-ts](https://github.com/nslaughter/financial-data-sdk-ts):
-  the clients that act as this API's customers.
+  the same client for Go and TypeScript, planned.
 - [financial-data-api-monitor](https://github.com/nslaughter/financial-data-api-monitor):
-  scheduled checks of what customers retrieve from this API.
+  scheduled checks of what customers retrieve from this API, planned for the
+  third stage.
 - *Turning a financial dataset into a dependable API* and *The timestamps that
   make financial data usable*: articles on this design, in preparation. I'll
   link them here when they are published.
