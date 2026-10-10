@@ -27,11 +27,7 @@ type changesResponse struct {
 // head, or one whose next event is past retention, is a state error, which
 // comes after lookup and entitlement.
 func (s *Server) readChanges(w http.ResponseWriter, c *call) *problem {
-	params, p := parseQuery(c.r.URL.RawQuery, c.endpoint, "after", "limit")
-	if p != nil {
-		return p
-	}
-	v, p := params.required("after", c.endpoint)
+	v, p := c.query.required("after", c.endpoint)
 	if p != nil {
 		return p
 	}
@@ -40,18 +36,16 @@ func (s *Server) readChanges(w http.ResponseWriter, c *call) *problem {
 		return p
 	}
 	limit := int64(defaultLimit)
-	if v, ok := params["limit"]; ok {
+	if v, ok := c.query["limit"]; ok {
 		if limit, p = parseInteger("limit", v, 1, maxLimit); p != nil {
 			return p
 		}
 	}
-	id := c.path["dataset_id"]
-	if !s.datasetExists(id) {
-		return notFound("There is no dataset %q.", id)
+	d, p := s.entitledDataset(c)
+	if p != nil {
+		return p
 	}
-	if !c.cred.entitled(id) {
-		return notEntitled(id)
-	}
+	id := d.DatasetID
 	changes, err := s.history.ReadChanges(id, c.now, after, int(limit))
 	switch {
 	case errors.Is(err, history.ErrPositionAhead):

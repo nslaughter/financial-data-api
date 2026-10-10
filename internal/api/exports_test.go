@@ -262,9 +262,9 @@ func TestExportCreatedAcrossAReset(t *testing.T) {
 	// The request reads the state as the server's authentication does, the
 	// state is reset, and then the handler runs.
 	c := &call{
-		r:        httptest.NewRequest(http.MethodPost, createExportPath, nil),
 		endpoint: "POST /v1/datasets/{dataset_id}/exports",
 		path:     map[string]string{"dataset_id": "core-indicators"},
+		body:     bodyFields{},
 		moment:   srv.state.view(researchKey),
 	}
 	if _, err := srv.state.reset(nil); err != nil {

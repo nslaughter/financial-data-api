@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"time"
@@ -121,13 +123,23 @@ func (s *state) view(apiKey string) moment {
 	return m
 }
 
-// setClock moves the clock forward to t. A time before the clock is
-// clock_backwards; the current time changes nothing.
-func (s *state) setClock(t time.Time) (time.Time, *problem) {
+// clockBackwardsError reports a time before the clock.
+type clockBackwardsError struct {
+	// clock is the clock when the change was refused.
+	clock time.Time
+}
+
+func (e *clockBackwardsError) Error() string {
+	return "the time is before the clock, " + formatTimestamp(e.clock)
+}
+
+// setClock moves the clock forward to t. A time before the clock is a
+// *clockBackwardsError; the current time changes nothing.
+func (s *state) setClock(t time.Time) (time.Time, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if t.Before(s.clock) {
-		return s.clock, newProblem("clock_backwards", named("now"), "now is before the clock, %s; the clock moves only forward.", formatTimestamp(s.clock))
+		return time.Time{}, &clockBackwardsError{clock: s.clock}
 	}
 	s.clock = t
 	return s.clock, nil
@@ -159,26 +171,50 @@ type credentialChange struct {
 	datasets []string
 }
 
+// errNoCredential reports a credential_id that no credential has.
+var errNoCredential = errors.New("no such credential")
+
+// credentialKindError reports a change to a credential that is not a
+// customer credential.
+type credentialKindError struct {
+	kind string
+}
+
+func (e *credentialKindError) Error() string {
+	return fmt.Sprintf("a %s credential cannot be changed", e.kind)
+}
+
+// unknownDatasetError reports a change that names a dataset the catalog does
+// not have.
+type unknownDatasetError struct {
+	datasetID string
+}
+
+func (e *unknownDatasetError) Error() string {
+	return fmt.Sprintf("no dataset %q", e.datasetID)
+}
+
 // changeCredential applies change to the credential id, after checking, in
-// the order of spec/api.md, that it exists, that it is a customer
-// credential, and that every dataset it names exists. It returns a copy of
-// the credential as changed.
-func (s *state) changeCredential(id string, change credentialChange, datasetExists func(string) bool) (*credential, *problem) {
+// the order of spec/api.md, that it exists (errNoCredential), that it is a
+// customer credential (*credentialKindError), and that every dataset it names
+// is in cat (*unknownDatasetError). It returns a copy of the credential as
+// changed. A refused change changes nothing.
+func (s *state) changeCredential(id string, change credentialChange, cat *catalog) (*credential, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, ok := s.credentials[id]
 	if !ok {
-		return nil, notFound("There is no credential %q.", id)
+		return nil, errNoCredential
 	}
 	if c.kind != fixtures.CustomerKind {
-		return nil, invalidParameter("credential_id", "%s is a %s credential; only a customer credential can be changed.", id, c.kind)
+		return nil, &credentialKindError{kind: c.kind}
 	}
 	var datasets []string
 	if change.datasets != nil {
 		datasets = make([]string, 0, len(change.datasets))
 		for _, d := range change.datasets {
-			if !datasetExists(d) {
-				return nil, invalidParameter("datasets", "There is no dataset %q.", d)
+			if _, ok := cat.lookupDataset(d); !ok {
+				return nil, &unknownDatasetError{datasetID: d}
 			}
 			if !slices.Contains(datasets, d) {
 				datasets = append(datasets, d)

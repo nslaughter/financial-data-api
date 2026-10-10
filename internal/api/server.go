@@ -17,8 +17,6 @@ import (
 	"net/url"
 	"regexp"
 	"runtime/debug"
-	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -55,8 +53,7 @@ type Config struct {
 type Server struct {
 	contractVersion string
 	history         *history.History
-	datasets        []fixtures.Dataset // by dataset_id
-	series          []fixtures.Series  // by series_id
+	catalog         *catalog
 	state           *state
 	routes          []route
 }
@@ -83,12 +80,9 @@ func New(cfg Config) (*Server, error) {
 	s := &Server{
 		contractVersion: cfg.ContractVersion,
 		history:         h,
-		datasets:        slices.Clone(cfg.Fixtures.Datasets),
-		series:          slices.Clone(cfg.Fixtures.Series),
+		catalog:         newCatalog(cfg.Fixtures),
 		state:           st,
 	}
-	sort.Slice(s.datasets, func(i, j int) bool { return s.datasets[i].DatasetID < s.datasets[j].DatasetID })
-	sort.Slice(s.series, func(i, j int) bool { return s.series[i].SeriesID < s.series[j].SeriesID })
 	s.routes = s.routeTable(cfg.TestControl)
 	return s, nil
 }
@@ -102,20 +96,36 @@ type route struct {
 	endpoints map[string]endpoint
 }
 
-// endpoint is one method of a route.
+// endpoint is one method of a route, with its request contract.
 type endpoint struct {
 	// auth is the kind of credential the endpoint requires, or "" for none.
-	auth   string
+	auth string
+	// query names the query parameters the endpoint defines.
+	query []string
+	// body is the body the endpoint takes, or nil if it takes none, so that
+	// a body sent with it is ignored.
+	body   *bodyContract
 	handle func(w http.ResponseWriter, c *call) *problem
+}
+
+// bodyContract is the body an endpoint takes: a JSON object whose fields are
+// among those it names. An endpoint whose body has no fields still declares
+// one, so that any field is refused.
+type bodyContract struct {
+	fields []string
 }
 
 // call is one request, as an endpoint sees it.
 type call struct {
-	r *http.Request
 	// endpoint names the endpoint, such as "GET /v1/series/{series_id}".
 	endpoint string
 	// path holds the path parameters by name.
 	path map[string]string
+	// query holds the query parameters, which the endpoint defines.
+	query queryParams
+	// body holds the fields of the body, which the endpoint defines, or is
+	// nil for an endpoint that takes no body.
+	body bodyFields
 	// moment holds the clock, read once for the request, the page-token key,
 	// the export store, and the authenticated credential, which is nil for
 	// an endpoint that requires none.
@@ -123,34 +133,68 @@ type call struct {
 }
 
 func (s *Server) routeTable(testControl bool) []route {
-	customer := func(h func(http.ResponseWriter, *call) *problem) endpoint {
-		return endpoint{auth: fixtures.CustomerKind, handle: h}
-	}
-	test := func(h func(http.ResponseWriter, *call) *problem) endpoint {
-		return endpoint{auth: fixtures.TestControlKind, handle: h}
-	}
+	const (
+		customer = fixtures.CustomerKind
+		test     = fixtures.TestControlKind
+	)
 	routes := []route{
-		{template: "/v1/meta", endpoints: map[string]endpoint{http.MethodGet: {handle: s.meta}}},
-		{template: "/v1/datasets", endpoints: map[string]endpoint{http.MethodGet: customer(s.listDatasets)}},
-		{template: "/v1/datasets/{dataset_id}", endpoints: map[string]endpoint{http.MethodGet: customer(s.getDataset)}},
-		{template: "/v1/datasets/{dataset_id}/changes", endpoints: map[string]endpoint{http.MethodGet: customer(s.readChanges)}},
-		{template: "/v1/datasets/{dataset_id}/exports", endpoints: map[string]endpoint{http.MethodPost: customer(s.createExport)}},
-		{template: "/v1/series", endpoints: map[string]endpoint{http.MethodGet: customer(s.listSeries)}},
-		{template: "/v1/series/{series_id}", endpoints: map[string]endpoint{http.MethodGet: customer(s.getSeries)}},
-		{template: "/v1/observations", endpoints: map[string]endpoint{http.MethodGet: customer(s.queryObservations)}},
-		{template: "/v1/revisions", endpoints: map[string]endpoint{http.MethodGet: customer(s.listRevisions)}},
-		{template: "/v1/release-calendar", endpoints: map[string]endpoint{http.MethodGet: customer(s.releaseCalendar)}},
-		{template: "/v1/exports/{export_id}", endpoints: map[string]endpoint{http.MethodGet: customer(s.getExport)}},
-		{template: "/v1/exports/{export_id}/files/{file_name}", endpoints: map[string]endpoint{http.MethodGet: customer(s.downloadExportFile)}},
+		{template: "/v1/meta", endpoints: map[string]endpoint{
+			http.MethodGet: {handle: s.meta},
+		}},
+		{template: "/v1/datasets", endpoints: map[string]endpoint{
+			http.MethodGet: {auth: customer, handle: s.listDatasets},
+		}},
+		{template: "/v1/datasets/{dataset_id}", endpoints: map[string]endpoint{
+			http.MethodGet: {auth: customer, handle: s.getDataset},
+		}},
+		{template: "/v1/datasets/{dataset_id}/changes", endpoints: map[string]endpoint{
+			http.MethodGet: {auth: customer, query: []string{"after", "limit"}, handle: s.readChanges},
+		}},
+		{template: "/v1/datasets/{dataset_id}/exports", endpoints: map[string]endpoint{
+			http.MethodPost: {auth: customer, body: &bodyContract{}, handle: s.createExport},
+		}},
+		{template: "/v1/series", endpoints: map[string]endpoint{
+			http.MethodGet: {auth: customer, handle: s.listSeries},
+		}},
+		{template: "/v1/series/{series_id}", endpoints: map[string]endpoint{
+			http.MethodGet: {auth: customer, handle: s.getSeries},
+		}},
+		{template: "/v1/observations", endpoints: map[string]endpoint{
+			http.MethodGet: {
+				auth:   customer,
+				query:  []string{"series_id", "period_start", "period_end", "available_as_of", "published_as_of", "page_size", "page_token"},
+				handle: s.queryObservations,
+			},
+		}},
+		{template: "/v1/revisions", endpoints: map[string]endpoint{
+			http.MethodGet: {
+				auth:   customer,
+				query:  []string{"series_id", "period_start", "period_end", "available_as_of", "page_size", "page_token"},
+				handle: s.listRevisions,
+			},
+		}},
+		{template: "/v1/release-calendar", endpoints: map[string]endpoint{
+			http.MethodGet: {auth: customer, query: []string{"series_id", "period_start", "period_end"}, handle: s.releaseCalendar},
+		}},
+		{template: "/v1/exports/{export_id}", endpoints: map[string]endpoint{
+			http.MethodGet: {auth: customer, handle: s.getExport},
+		}},
+		{template: "/v1/exports/{export_id}/files/{file_name}", endpoints: map[string]endpoint{
+			http.MethodGet: {auth: customer, handle: s.downloadExportFile},
+		}},
 	}
 	if testControl {
 		routes = append(routes,
 			route{template: "/test/clock", endpoints: map[string]endpoint{
-				http.MethodGet: test(s.getClock),
-				http.MethodPut: test(s.setClock),
+				http.MethodGet: {auth: test, handle: s.getClock},
+				http.MethodPut: {auth: test, body: &bodyContract{fields: []string{"now"}}, handle: s.setClock},
 			}},
-			route{template: "/test/reset", endpoints: map[string]endpoint{http.MethodPost: test(s.reset)}},
-			route{template: "/test/credentials/{credential_id}", endpoints: map[string]endpoint{http.MethodPut: test(s.changeCredential)}},
+			route{template: "/test/reset", endpoints: map[string]endpoint{
+				http.MethodPost: {auth: test, body: &bodyContract{fields: []string{"clock"}}, handle: s.reset},
+			}},
+			route{template: "/test/credentials/{credential_id}", endpoints: map[string]endpoint{
+				http.MethodPut: {auth: test, body: &bodyContract{fields: []string{"active", "datasets"}}, handle: s.changeCredential},
+			}},
 		)
 	}
 	for i := range routes {
@@ -202,12 +246,22 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) *problem {
 	}
 
 	// Authentication. The clock is read once, with the credential.
-	c := &call{r: r, endpoint: r.Method + " " + rt.template, path: params}
+	c := &call{endpoint: r.Method + " " + rt.template, path: params}
+	var p *problem
 	if ep.auth == "" {
 		c.now = s.state.now()
-	} else {
-		var p *problem
-		if c.moment, p = s.authenticate(r, ep.auth); p != nil {
+	} else if c.moment, p = s.authenticate(r, ep.auth); p != nil {
+		return p
+	}
+
+	// Request validation: the names of the parameters and fields, repeated
+	// and empty parameters, and the form of the body. The handler converts
+	// the values.
+	if c.query, p = parseQuery(r.URL.RawQuery, c.endpoint, ep.query...); p != nil {
+		return p
+	}
+	if ep.body != nil {
+		if c.body, p = parseBody(r, c.endpoint, ep.body.fields...); p != nil {
 			return p
 		}
 	}
