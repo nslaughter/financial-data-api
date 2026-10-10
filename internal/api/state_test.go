@@ -59,15 +59,17 @@ func TestStateChangeCredential(t *testing.T) {
 	if !errors.As(err, &kind) || kind.kind != fixtures.TestControlKind {
 		t.Errorf("the test-control credential: got %v, want a *credentialKindError of kind %s", err, fixtures.TestControlKind)
 	}
-	_, err = st.changeCredential("cred_research", credentialChange{active: &inactive, datasets: []string{"core-indicators", "no-such-dataset"}}, cat)
+	_, err = st.changeCredential("cred_unentitled", credentialChange{active: &inactive, datasets: []string{"core-indicators", "no-such-dataset"}}, cat)
 	var unknown *unknownDatasetError
 	if !errors.As(err, &unknown) || unknown.datasetID != "no-such-dataset" {
 		t.Errorf("an unknown dataset: got %v, want an *unknownDatasetError for no-such-dataset", err)
 	}
 
-	// A refused change changes nothing.
-	if m := st.view(researchKey); m.cred == nil || !m.cred.active {
-		t.Errorf("a refused change deactivated the credential: %+v", m.cred)
+	// A refused change changes nothing: neither active nor the datasets.
+	// cred_unentitled holds no datasets, so storing the valid
+	// "core-indicators" that precedes the unknown dataset would show.
+	if m := st.view(unentitledKey); m.cred == nil || !m.cred.active || len(m.cred.datasets) != 0 {
+		t.Errorf("a refused change changed the credential: %+v", m.cred)
 	}
 
 	cred, err := st.changeCredential("cred_research", credentialChange{active: &inactive}, cat)
