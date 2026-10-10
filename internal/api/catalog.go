@@ -9,7 +9,9 @@ import (
 )
 
 // The response types keep the field order of spec/api.md, and a field
-// without a value is a nil pointer, which encodes as null.
+// without a value is a nil pointer, which encodes as null. A response that
+// adds the API's fields to a fixture record embeds the record, so that its
+// fields come first, in the order of the data contract's table.
 
 type list[T any] struct {
 	Data []T `json:"data"`
@@ -23,25 +25,14 @@ type metaResponse struct {
 }
 
 type datasetResponse struct {
-	DatasetID    string `json:"dataset_id"`
-	Name         string `json:"name"`
-	Description  string `json:"description"`
+	fixtures.Dataset
 	Entitled     bool   `json:"entitled"`
 	HeadPosition *int64 `json:"head_position"`
 }
 
 type seriesResponse struct {
-	SeriesID           string `json:"series_id"`
-	DatasetID          string `json:"dataset_id"`
-	Name               string `json:"name"`
-	Description        string `json:"description"`
-	Frequency          string `json:"frequency"`
-	Unit               string `json:"unit"`
-	BasePeriod         string `json:"base_period"`
-	SeasonalAdjustment string `json:"seasonal_adjustment"`
-	Source             string `json:"source"`
-	ReleaseSchedule    string `json:"release_schedule"`
-	Entitled           bool   `json:"entitled"`
+	fixtures.Series
+	Entitled bool `json:"entitled"`
 }
 
 // catalog holds the datasets and series, which never change, each sorted by
@@ -110,7 +101,7 @@ func (s *Server) getDataset(w http.ResponseWriter, c *call) *problem {
 // dataset describes a dataset to the requesting credential. Its head
 // position is null unless the credential is entitled to the dataset.
 func (s *Server) dataset(d fixtures.Dataset, c *call) datasetResponse {
-	r := datasetResponse{DatasetID: d.DatasetID, Name: d.Name, Description: d.Description}
+	r := datasetResponse{Dataset: d}
 	if c.cred.entitled(d.DatasetID) {
 		head := s.history.Position(d.DatasetID, c.now)
 		r.Entitled, r.HeadPosition = true, &head
@@ -153,17 +144,5 @@ func (s *Server) getSeries(w http.ResponseWriter, c *call) *problem {
 
 // seriesOf describes a series to the requesting credential.
 func seriesOf(s fixtures.Series, cred *credential) seriesResponse {
-	return seriesResponse{
-		SeriesID:           s.SeriesID,
-		DatasetID:          s.DatasetID,
-		Name:               s.Name,
-		Description:        s.Description,
-		Frequency:          s.Frequency,
-		Unit:               s.Unit,
-		BasePeriod:         s.BasePeriod,
-		SeasonalAdjustment: s.SeasonalAdjustment,
-		Source:             s.Source,
-		ReleaseSchedule:    s.ReleaseSchedule,
-		Entitled:           cred.entitled(s.DatasetID),
-	}
+	return seriesResponse{Series: s, Entitled: cred.entitled(s.DatasetID)}
 }

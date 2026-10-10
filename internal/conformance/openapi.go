@@ -180,6 +180,11 @@ func (d *Document) Validate(method, path string, status int, h http.Header, body
 
 // operation returns the operation that a request matches, or nil. Of the
 // paths that match, the one with the most literal segments is used.
+//
+// This path matching is deliberately separate from the server's routing in
+// internal/api. It reads the paths from spec/openapi.yaml, not from the
+// server's route table, so that it checks the server's routing independently
+// instead of sharing its mistakes.
 func (d *Document) operation(method, path string) *operation {
 	segments := strings.Split(path, "/")
 	var best *pathItem

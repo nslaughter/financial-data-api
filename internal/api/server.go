@@ -73,7 +73,7 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	st, err := newState(cfg.ClockStart, cfg.Fixtures.Credentials, exports.NewStore(h))
+	st, err := newState(cfg.ClockStart, cfg.Fixtures.Credentials, exports.NewStore(h.Snapshot))
 	if err != nil {
 		return nil, err
 	}

@@ -2,7 +2,7 @@
 // dataset at a position, with the coverage and the file digest that their
 // manifests report. It knows nothing of HTTP: the API reads the clock and
 // checks access, and the store records exports and regenerates their files
-// from internal/history.
+// from the snapshots its SnapshotFunc returns.
 //
 // An export's file is never stored. History does not change, so the
 // revisions at or below an export's position, and so the canonical bytes of
@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nslaughter/financial-data-api/internal/fixtures"
 	"github.com/nslaughter/financial-data-api/internal/history"
 )
 
@@ -75,10 +76,17 @@ type File struct {
 	SHA256 string
 }
 
+// SnapshotFunc returns a dataset's revisions with sequence at or below
+// position, in sequence order, as history.History.Snapshot does. position is
+// at or below the dataset's head position. It returns the same revisions
+// whenever it is called with the same arguments, since the store regenerates
+// an export's file from them.
+type SnapshotFunc func(datasetID string, position int64) []fixtures.Revision
+
 // Store holds exports. It is safe for concurrent use.
 type Store struct {
-	history *history.History
-	ids     *issuer
+	snapshot SnapshotFunc
+	ids      *issuer
 
 	mu      sync.Mutex
 	exports map[string]Export // by ID
@@ -93,20 +101,21 @@ type issuer struct {
 	issued map[string]bool
 }
 
-// NewStore returns an empty store of exports of h's datasets.
-func NewStore(h *history.History) *Store {
-	return newStore(h, &issuer{random: rand.Reader, issued: map[string]bool{}})
+// NewStore returns an empty store of exports of the datasets whose snapshots
+// snapshot returns.
+func NewStore(snapshot SnapshotFunc) *Store {
+	return newStore(snapshot, &issuer{random: rand.Reader, issued: map[string]bool{}})
 }
 
-func newStore(h *history.History, ids *issuer) *Store {
-	return &Store{history: h, ids: ids, exports: map[string]Export{}}
+func newStore(snapshot SnapshotFunc, ids *issuer) *Store {
+	return &Store{snapshot: snapshot, ids: ids, exports: map[string]Export{}}
 }
 
 // Cleared returns a new, empty store that shares s's record of issued
 // identifiers, so that it never issues an identifier that s, or any store
 // before it, issued. s is unchanged.
 func (s *Store) Cleared() *Store {
-	return newStore(s.history, s.ids)
+	return newStore(s.snapshot, s.ids)
 }
 
 // Create creates an export of the dataset at position, which is at or below
@@ -116,7 +125,7 @@ func (s *Store) Create(datasetID string, position int64, createdAt time.Time) (E
 	if err != nil {
 		return Export{}, err
 	}
-	revisions := s.history.Snapshot(datasetID, position)
+	revisions := s.snapshot(datasetID, position)
 	data := history.ExportFile(revisions)
 	digest := sha256.Sum256(data)
 	e := Export{
@@ -166,7 +175,7 @@ func (s *Store) Get(id string) (Export, bool) {
 // dataset at or below its position, in sequence order. They are the bytes
 // whose length and digest e.File reports.
 func (s *Store) FileBytes(e Export) []byte {
-	return history.ExportFile(s.history.Snapshot(e.DatasetID, e.Position))
+	return history.ExportFile(s.snapshot(e.DatasetID, e.Position))
 }
 
 // issue returns a new identifier: idPrefix and idBytes from the random

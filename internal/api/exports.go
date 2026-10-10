@@ -3,7 +3,6 @@ package api
 import (
 	"log"
 	"net/http"
-	"strconv"
 
 	"github.com/nslaughter/financial-data-api/internal/exports"
 )
@@ -87,12 +86,7 @@ func (s *Server) downloadExportFile(w http.ResponseWriter, c *call) *problem {
 	if p := checkExportAccess(c, e); p != nil {
 		return p
 	}
-	data := c.exports.FileBytes(e)
-	h := w.Header()
-	h.Set("Content-Type", ndjsonType)
-	h.Set("Content-Length", strconv.Itoa(len(data)))
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
+	writeBytes(w, ndjsonType, http.StatusOK, c.exports.FileBytes(e))
 	return nil
 }
 

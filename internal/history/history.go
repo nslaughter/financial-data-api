@@ -197,13 +197,13 @@ func withinRange(periodStart, periodEnd time.Time, start, end *time.Time) bool {
 
 // considered returns the revisions the query considers: those of its series
 // and range, at or below its position, that its cutoff admits.
-func (h *History) considered(q Query) []*revision {
-	var out []*revision
+func (h *History) considered(q Query) []revision {
+	var out []revision
 	revs := h.upTo(h.series[q.SeriesID], q.Position)
 	for i := range revs {
 		r := &revs[i]
 		if r.SeriesID == q.SeriesID && q.inRange(r) && q.Cutoff.admits(r) {
-			out = append(out, r)
+			out = append(out, *r)
 		}
 	}
 	return out
@@ -218,13 +218,13 @@ func (h *History) considered(q Query) []*revision {
 // the position. Results are ordered by period_start, ascending, and the slice
 // is never nil.
 func (h *History) Observations(q Query) []fixtures.Revision {
-	selected := make(map[string]*revision)
+	selected := make(map[string]revision)
 	for _, r := range h.considered(q) {
 		if s, ok := selected[r.ObservationID]; !ok || r.RevisionNumber > s.RevisionNumber {
 			selected[r.ObservationID] = r
 		}
 	}
-	revs := make([]*revision, 0, len(selected))
+	revs := make([]revision, 0, len(selected))
 	for _, r := range selected {
 		revs = append(revs, r)
 	}
@@ -250,11 +250,12 @@ func (h *History) Revisions(q Query) []fixtures.Revision {
 	return records(revs)
 }
 
-// records returns the fixture records of revs, never nil.
-func records(revs []*revision) []fixtures.Revision {
+// records returns the fixture records of revs, in the same order and never
+// nil. It is the one place revisions become fixture records.
+func records(revs []revision) []fixtures.Revision {
 	out := make([]fixtures.Revision, len(revs))
-	for i, r := range revs {
-		out[i] = r.Revision
+	for i := range revs {
+		out[i] = revs[i].Revision
 	}
 	return out
 }
@@ -292,14 +293,7 @@ func (h *History) ReadChanges(datasetID string, now time.Time, after int64, limi
 	if len(pending) > limit {
 		pending = pending[:limit]
 	}
-	c := Changes{
-		Events:       make([]fixtures.Revision, len(pending)),
-		NextPosition: after,
-		HeadPosition: head,
-	}
-	for i := range pending {
-		c.Events[i] = pending[i].Revision
-	}
+	c := Changes{Events: records(pending), NextPosition: after, HeadPosition: head}
 	if len(pending) > 0 {
 		c.NextPosition = pending[len(pending)-1].Sequence
 	}
@@ -310,12 +304,7 @@ func (h *History) ReadChanges(datasetID string, now time.Time, after int64, limi
 // position, in sequence order: the content of an export at that position,
 // which is at or below the head position. The slice is never nil.
 func (h *History) Snapshot(datasetID string, position int64) []fixtures.Revision {
-	revs := h.upTo(datasetID, position)
-	out := make([]fixtures.Revision, len(revs))
-	for i := range revs {
-		out[i] = revs[i].Revision
-	}
-	return out
+	return records(h.upTo(datasetID, position))
 }
 
 // Releases returns the release calendar's entries for the series whose
