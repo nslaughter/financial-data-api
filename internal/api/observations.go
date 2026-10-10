@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -10,17 +9,21 @@ import (
 	"github.com/nslaughter/financial-data-api/internal/history"
 )
 
-// cutoffKinds is the time field that each cutoff parameter compares.
-var cutoffKinds = map[string]history.CutoffKind{
-	"available_as_of": history.AvailableAsOf,
-	"published_as_of": history.PublishedAsOf,
+// cutoffs are the cutoff parameters, in the order a conflict names them, and
+// the time field each compares.
+var cutoffs = []struct {
+	name string
+	kind history.CutoffKind
+}{
+	{"available_as_of", history.AvailableAsOf},
+	{"published_as_of", history.PublishedAsOf},
 }
 
 // queryObservations returns the selected revision of each observation of a
 // series, at the available_as_of or published_as_of cutoff or, without one,
 // the clock, among the revisions at or below the query's snapshot position.
 func (s *Server) queryObservations(w http.ResponseWriter, c *call) *problem {
-	return s.pagedQuery(w, c, []string{"available_as_of", "published_as_of"}, s.history.Observations)
+	return s.pagedQuery(w, c, s.history.Observations)
 }
 
 // listRevisions returns the revision history of a series' observations:
@@ -28,31 +31,26 @@ func (s *Server) queryObservations(w http.ResponseWriter, c *call) *problem {
 // superseded, erroneous, and withdrawn ones, that the available_as_of cutoff
 // admits. It does not define published_as_of, which is unknown_parameter.
 func (s *Server) listRevisions(w http.ResponseWriter, c *call) *problem {
-	return s.pagedQuery(w, c, []string{"available_as_of"}, s.history.Revisions)
+	return s.pagedQuery(w, c, s.history.Revisions)
 }
 
 // pagedQuery answers a paged query of a series' revisions, which takes the
-// cutoff parameters named in cutoffs, at most one at a time, and whose result
-// at its snapshot position comes from results. It requires entitlement to the
-// series' dataset, on every page.
-func (s *Server) pagedQuery(w http.ResponseWriter, c *call, cutoffs []string, results func(history.Query) []fixtures.Revision) *problem {
-	allowed := slices.Concat([]string{"series_id", "period_start", "period_end"}, cutoffs, []string{"page_size", "page_token"})
-	params, p := parseQuery(c.r.URL.RawQuery, c.endpoint, allowed...)
+// cutoff parameters its endpoint defines, at most one at a time, and whose
+// result at its snapshot position comes from results. It requires
+// entitlement to the series' dataset, on every page.
+func (s *Server) pagedQuery(w http.ResponseWriter, c *call, results func(history.Query) []fixtures.Revision) *problem {
+	q, p := parseSeriesQuery(c)
 	if p != nil {
 		return p
 	}
-	q, p := parseSeriesQuery(c, params)
+	if q.Cutoff, p = parseCutoffs(c); p != nil {
+		return p
+	}
+	pg, p := parsePaging(c)
 	if p != nil {
 		return p
 	}
-	if q.Cutoff, p = parseCutoffs(c, params, cutoffs); p != nil {
-		return p
-	}
-	pg, p := parsePaging(c, params)
-	if p != nil {
-		return p
-	}
-	series, ok := s.findSeries(q.SeriesID)
+	series, ok := s.catalog.lookupSeries(q.SeriesID)
 	if !ok {
 		return notFound("There is no series %q.", q.SeriesID)
 	}
@@ -71,15 +69,11 @@ func (s *Server) pagedQuery(w http.ResponseWriter, c *call, cutoffs []string, re
 // lie within the range, whatever the clock shows. The calendar is metadata,
 // like the catalog, so any customer key may read it without an entitlement.
 func (s *Server) releaseCalendar(w http.ResponseWriter, c *call) *problem {
-	params, p := parseQuery(c.r.URL.RawQuery, c.endpoint, "series_id", "period_start", "period_end")
+	q, p := parseSeriesQuery(c)
 	if p != nil {
 		return p
 	}
-	q, p := parseSeriesQuery(c, params)
-	if p != nil {
-		return p
-	}
-	if _, ok := s.findSeries(q.SeriesID); !ok {
+	if _, ok := s.catalog.lookupSeries(q.SeriesID); !ok {
 		return notFound("There is no series %q.", q.SeriesID)
 	}
 	writeJSON(w, http.StatusOK, list[fixtures.Release]{Data: s.history.Releases(q.SeriesID, q.PeriodStart, q.PeriodEnd)})
@@ -90,10 +84,10 @@ func (s *Server) releaseCalendar(w http.ResponseWriter, c *call) *problem {
 // period range, period_start to period_end. When both bounds are given,
 // period_start must be before period_end; an empty or reversed range names
 // period_end.
-func parseSeriesQuery(c *call, params queryParams) (history.Query, *problem) {
+func parseSeriesQuery(c *call) (history.Query, *problem) {
 	var q history.Query
 	var p *problem
-	if q.SeriesID, p = params.required("series_id", c.endpoint); p != nil {
+	if q.SeriesID, p = c.query.required("series_id", c.endpoint); p != nil {
 		return q, p
 	}
 	for _, bound := range []struct {
@@ -103,7 +97,7 @@ func parseSeriesQuery(c *call, params queryParams) (history.Query, *problem) {
 		{"period_start", &q.PeriodStart},
 		{"period_end", &q.PeriodEnd},
 	} {
-		if v, ok := params[bound.name]; ok {
+		if v, ok := c.query[bound.name]; ok {
 			d, p := parseDate(bound.name, v)
 			if p != nil {
 				return q, p
@@ -117,15 +111,17 @@ func parseSeriesQuery(c *call, params queryParams) (history.Query, *problem) {
 	return q, nil
 }
 
-// parseCutoffs reads the query's cutoff, if it gives one of the cutoff
-// parameters in names: a timestamp at or before the clock. A query takes at
-// most one cutoff, so giving two is conflicting_cutoffs, which names no
-// parameter.
-func parseCutoffs(c *call, params queryParams, names []string) (*history.Cutoff, *problem) {
+// parseCutoffs reads the query's cutoff, if it gives a cutoff parameter: a
+// timestamp at or before the clock. A query takes at most one cutoff, so
+// giving two is conflicting_cutoffs, which names no parameter. The query
+// holds only the cutoff parameters its endpoint defines.
+func parseCutoffs(c *call) (*history.Cutoff, *problem) {
 	var given []string
-	for _, name := range names {
-		if _, ok := params[name]; ok {
-			given = append(given, name)
+	var kind history.CutoffKind
+	for _, cutoff := range cutoffs {
+		if _, ok := c.query[cutoff.name]; ok {
+			given = append(given, cutoff.name)
+			kind = cutoff.kind
 		}
 	}
 	switch {
@@ -135,24 +131,14 @@ func parseCutoffs(c *call, params queryParams, names []string) (*history.Cutoff,
 		return nil, newProblem("conflicting_cutoffs", nil, "%s cannot be combined; a query takes at most one cutoff.", strings.Join(given, " and "))
 	}
 	name := given[0]
-	at, p := parseTimestamp(name, params[name])
+	at, p := parseTimestamp(name, c.query[name])
 	if p != nil {
 		return nil, p
 	}
 	if at.After(c.now) {
 		return nil, newProblem("cutoff_in_future", named(name), "%s is later than the clock, %s.", name, formatTimestamp(c.now))
 	}
-	return &history.Cutoff{Kind: cutoffKinds[name], At: at}, nil
-}
-
-// findSeries returns the series of the catalog with the given id.
-func (s *Server) findSeries(id string) (fixtures.Series, bool) {
-	for _, sr := range s.series {
-		if sr.SeriesID == id {
-			return sr, true
-		}
-	}
-	return fixtures.Series{}, false
+	return &history.Cutoff{Kind: kind, At: at}, nil
 }
 
 func notEntitled(datasetID string) *problem {

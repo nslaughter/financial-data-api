@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -20,9 +21,6 @@ type credentialResponse struct {
 }
 
 func (s *Server) getClock(w http.ResponseWriter, c *call) *problem {
-	if _, p := parseQuery(c.r.URL.RawQuery, c.endpoint); p != nil {
-		return p
-	}
 	writeJSON(w, http.StatusOK, clockResponse{Now: formatTimestamp(c.now)})
 	return nil
 }
@@ -30,14 +28,7 @@ func (s *Server) getClock(w http.ResponseWriter, c *call) *problem {
 // setClock moves the clock forward. The new time is compared with the clock
 // as it is when the change is made.
 func (s *Server) setClock(w http.ResponseWriter, c *call) *problem {
-	if _, p := parseQuery(c.r.URL.RawQuery, c.endpoint); p != nil {
-		return p
-	}
-	body, p := parseBody(c.r, c.endpoint, "now")
-	if p != nil {
-		return p
-	}
-	now, present, p := body.timestamp("now")
+	now, present, p := c.body.timestamp("now")
 	switch {
 	case p != nil:
 		return p
@@ -47,9 +38,14 @@ func (s *Server) setClock(w http.ResponseWriter, c *call) *problem {
 	if p := beforeMaxClock("now", now); p != nil {
 		return p
 	}
-	clock, p := s.state.setClock(now)
-	if p != nil {
-		return p
+	clock, err := s.state.setClock(now)
+	var backwards *clockBackwardsError
+	switch {
+	case errors.As(err, &backwards):
+		return newProblem("clock_backwards", named("now"), "now is before the clock, %s; the clock moves only forward.", formatTimestamp(backwards.clock))
+	case err != nil:
+		log.Printf("api: setting the clock: %v", err)
+		return newProblem("internal", nil, "The clock could not be set.")
 	}
 	writeJSON(w, http.StatusOK, clockResponse{Now: formatTimestamp(clock)})
 	return nil
@@ -58,14 +54,7 @@ func (s *Server) setClock(w http.ResponseWriter, c *call) *problem {
 // reset returns the server to its startup state, with an optional clock,
 // which may be earlier than the current one.
 func (s *Server) reset(w http.ResponseWriter, c *call) *problem {
-	if _, p := parseQuery(c.r.URL.RawQuery, c.endpoint); p != nil {
-		return p
-	}
-	body, p := parseBody(c.r, c.endpoint, "clock")
-	if p != nil {
-		return p
-	}
-	t, present, p := body.timestamp("clock")
+	t, present, p := c.body.timestamp("clock")
 	if p != nil {
 		return p
 	}
@@ -85,31 +74,37 @@ func (s *Server) reset(w http.ResponseWriter, c *call) *problem {
 	return nil
 }
 
-// changeCredential changes a customer credential until the next reset. It
-// checks the body's form, then that the credential exists, then its kind
-// and the datasets it names.
+// changeCredential changes a customer credential until the next reset. The
+// body's form is checked before the handler runs, then the values of its
+// fields, then that the credential exists, and then its kind and the
+// datasets it names.
 func (s *Server) changeCredential(w http.ResponseWriter, c *call) *problem {
-	if _, p := parseQuery(c.r.URL.RawQuery, c.endpoint); p != nil {
-		return p
-	}
-	body, p := parseBody(c.r, c.endpoint, "active", "datasets")
-	if p != nil {
-		return p
-	}
 	var change credentialChange
-	if change.active, p = body.boolean("active"); p != nil {
+	var p *problem
+	if change.active, p = c.body.boolean("active"); p != nil {
 		return p
 	}
-	datasets, present, p := body.stringArray("datasets")
+	datasets, present, p := c.body.stringArray("datasets")
 	if p != nil {
 		return p
 	}
 	if present {
 		change.datasets = datasets
 	}
-	cred, p := s.state.changeCredential(c.path["credential_id"], change, s.datasetExists)
-	if p != nil {
-		return p
+	id := c.path["credential_id"]
+	cred, err := s.state.changeCredential(id, change, s.catalog)
+	var kind *credentialKindError
+	var unknown *unknownDatasetError
+	switch {
+	case errors.Is(err, errNoCredential):
+		return notFound("There is no credential %q.", id)
+	case errors.As(err, &kind):
+		return invalidParameter("credential_id", "%s is a %s credential; only a customer credential can be changed.", id, kind.kind)
+	case errors.As(err, &unknown):
+		return invalidParameter("datasets", "There is no dataset %q.", unknown.datasetID)
+	case err != nil:
+		log.Printf("api: changing the credential %s: %v", id, err)
+		return newProblem("internal", nil, "The credential could not be changed.")
 	}
 	datasets = cred.datasets
 	if datasets == nil {

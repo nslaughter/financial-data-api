@@ -46,19 +46,11 @@ type exportFileResponse struct {
 // request that read the state before a reset goes into the store the reset
 // replaced, as if the reset deleted it.
 func (s *Server) createExport(w http.ResponseWriter, c *call) *problem {
-	if _, p := parseQuery(c.r.URL.RawQuery, c.endpoint); p != nil {
+	d, p := s.entitledDataset(c)
+	if p != nil {
 		return p
 	}
-	if _, p := parseBody(c.r, c.endpoint); p != nil {
-		return p
-	}
-	id := c.path["dataset_id"]
-	if !s.datasetExists(id) {
-		return notFound("There is no dataset %q.", id)
-	}
-	if !c.cred.entitled(id) {
-		return notEntitled(id)
-	}
+	id := d.DatasetID
 	e, err := c.exports.Create(id, s.history.Position(id, c.now), c.now)
 	if err != nil {
 		log.Printf("api: creating an export of %s: %v", id, err)
@@ -71,9 +63,6 @@ func (s *Server) createExport(w http.ResponseWriter, c *call) *problem {
 
 // getExport returns an export's manifest.
 func (s *Server) getExport(w http.ResponseWriter, c *call) *problem {
-	if _, p := parseQuery(c.r.URL.RawQuery, c.endpoint); p != nil {
-		return p
-	}
 	e, p := lookupExport(c)
 	if p != nil {
 		return p
@@ -88,9 +77,6 @@ func (s *Server) getExport(w http.ResponseWriter, c *call) *problem {
 // downloadExportFile returns an export's file. The file is a lookup like the
 // export, so an unknown file is not_found before entitlement is checked.
 func (s *Server) downloadExportFile(w http.ResponseWriter, c *call) *problem {
-	if _, p := parseQuery(c.r.URL.RawQuery, c.endpoint); p != nil {
-		return p
-	}
 	e, p := lookupExport(c)
 	if p != nil {
 		return p

@@ -2,6 +2,8 @@ package api
 
 import (
 	"net/http"
+	"slices"
+	"sort"
 
 	"github.com/nslaughter/financial-data-api/internal/fixtures"
 )
@@ -42,12 +44,41 @@ type seriesResponse struct {
 	Entitled           bool   `json:"entitled"`
 }
 
+// catalog holds the datasets and series, which never change, each sorted by
+// its identifier, the order in which they are listed.
+type catalog struct {
+	datasets []fixtures.Dataset
+	series   []fixtures.Series
+}
+
+func newCatalog(f *fixtures.Fixtures) *catalog {
+	c := &catalog{datasets: slices.Clone(f.Datasets), series: slices.Clone(f.Series)}
+	sort.Slice(c.datasets, func(i, j int) bool { return c.datasets[i].DatasetID < c.datasets[j].DatasetID })
+	sort.Slice(c.series, func(i, j int) bool { return c.series[i].SeriesID < c.series[j].SeriesID })
+	return c
+}
+
+// lookupDataset returns the dataset whose dataset_id is id.
+func (c *catalog) lookupDataset(id string) (fixtures.Dataset, bool) {
+	i := slices.IndexFunc(c.datasets, func(d fixtures.Dataset) bool { return d.DatasetID == id })
+	if i < 0 {
+		return fixtures.Dataset{}, false
+	}
+	return c.datasets[i], true
+}
+
+// lookupSeries returns the series whose series_id is id.
+func (c *catalog) lookupSeries(id string) (fixtures.Series, bool) {
+	i := slices.IndexFunc(c.series, func(sr fixtures.Series) bool { return sr.SeriesID == id })
+	if i < 0 {
+		return fixtures.Series{}, false
+	}
+	return c.series[i], true
+}
+
 // meta describes the server. It requires no key and ignores the
 // Authorization header.
 func (s *Server) meta(w http.ResponseWriter, c *call) *problem {
-	if _, p := parseQuery(c.r.URL.RawQuery, c.endpoint); p != nil {
-		return p
-	}
 	writeJSON(w, http.StatusOK, metaResponse{
 		APIVersion:           apiVersion,
 		SupportedAPIVersions: []string{apiVersion},
@@ -58,11 +89,8 @@ func (s *Server) meta(w http.ResponseWriter, c *call) *problem {
 }
 
 func (s *Server) listDatasets(w http.ResponseWriter, c *call) *problem {
-	if _, p := parseQuery(c.r.URL.RawQuery, c.endpoint); p != nil {
-		return p
-	}
-	data := make([]datasetResponse, 0, len(s.datasets))
-	for _, d := range s.datasets {
+	data := make([]datasetResponse, 0, len(s.catalog.datasets))
+	for _, d := range s.catalog.datasets {
 		data = append(data, s.dataset(d, c))
 	}
 	writeJSON(w, http.StatusOK, list[datasetResponse]{Data: data})
@@ -70,17 +98,13 @@ func (s *Server) listDatasets(w http.ResponseWriter, c *call) *problem {
 }
 
 func (s *Server) getDataset(w http.ResponseWriter, c *call) *problem {
-	if _, p := parseQuery(c.r.URL.RawQuery, c.endpoint); p != nil {
-		return p
-	}
 	id := c.path["dataset_id"]
-	for _, d := range s.datasets {
-		if d.DatasetID == id {
-			writeJSON(w, http.StatusOK, s.dataset(d, c))
-			return nil
-		}
+	d, ok := s.catalog.lookupDataset(id)
+	if !ok {
+		return notFound("There is no dataset %q.", id)
 	}
-	return notFound("There is no dataset %q.", id)
+	writeJSON(w, http.StatusOK, s.dataset(d, c))
+	return nil
 }
 
 // dataset describes a dataset to the requesting credential. Its head
@@ -94,22 +118,23 @@ func (s *Server) dataset(d fixtures.Dataset, c *call) datasetResponse {
 	return r
 }
 
-// datasetExists reports whether the catalog has a dataset.
-func (s *Server) datasetExists(id string) bool {
-	for _, d := range s.datasets {
-		if d.DatasetID == id {
-			return true
-		}
+// entitledDataset returns the dataset the request's path names, after
+// looking it up and then checking that the credential is entitled to it.
+func (s *Server) entitledDataset(c *call) (fixtures.Dataset, *problem) {
+	id := c.path["dataset_id"]
+	d, ok := s.catalog.lookupDataset(id)
+	if !ok {
+		return fixtures.Dataset{}, notFound("There is no dataset %q.", id)
 	}
-	return false
+	if !c.cred.entitled(id) {
+		return fixtures.Dataset{}, notEntitled(id)
+	}
+	return d, nil
 }
 
 func (s *Server) listSeries(w http.ResponseWriter, c *call) *problem {
-	if _, p := parseQuery(c.r.URL.RawQuery, c.endpoint); p != nil {
-		return p
-	}
-	data := make([]seriesResponse, 0, len(s.series))
-	for _, sr := range s.series {
+	data := make([]seriesResponse, 0, len(s.catalog.series))
+	for _, sr := range s.catalog.series {
 		data = append(data, seriesOf(sr, c.cred))
 	}
 	writeJSON(w, http.StatusOK, list[seriesResponse]{Data: data})
@@ -117,11 +142,8 @@ func (s *Server) listSeries(w http.ResponseWriter, c *call) *problem {
 }
 
 func (s *Server) getSeries(w http.ResponseWriter, c *call) *problem {
-	if _, p := parseQuery(c.r.URL.RawQuery, c.endpoint); p != nil {
-		return p
-	}
 	id := c.path["series_id"]
-	sr, ok := s.findSeries(id)
+	sr, ok := s.catalog.lookupSeries(id)
 	if !ok {
 		return notFound("There is no series %q.", id)
 	}

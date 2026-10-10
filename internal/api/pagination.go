@@ -138,17 +138,17 @@ type paging struct {
 // credential, and every other parameter as the request gives it, including
 // page_size and including omitted parameters left omitted
 // (page_token_mismatch).
-func parsePaging(c *call, params queryParams) (*paging, *problem) {
-	pg := &paging{size: defaultPageSize, params: maps.Clone(params)}
+func parsePaging(c *call) (*paging, *problem) {
+	pg := &paging{size: defaultPageSize, params: maps.Clone(c.query)}
 	delete(pg.params, "page_token")
-	if v, ok := params["page_size"]; ok {
+	if v, ok := c.query["page_size"]; ok {
 		n, p := parseInteger("page_size", v, 1, maxPageSize)
 		if p != nil {
 			return nil, p
 		}
 		pg.size = int(n)
 	}
-	v, ok := params["page_token"]
+	v, ok := c.query["page_token"]
 	if !ok {
 		return pg, nil
 	}
