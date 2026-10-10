@@ -34,7 +34,7 @@ start until the owner records the decision here.
 | 10. Publish the full API image | Done | [#17](https://github.com/nslaughter/financial-data-api/pull/17) |
 | 11. Give each contract term one owner | Done | [#21](https://github.com/nslaughter/financial-data-api/pull/21) |
 | 12. Map errors and declare request contracts in `internal/api` | Done | [#24](https://github.com/nslaughter/financial-data-api/pull/24) |
-| 13. Embed the fixture types and remove the smaller repeats | Done | |
+| 13. Embed the fixture types and remove the smaller repeats | Done | [#25](https://github.com/nslaughter/financial-data-api/pull/25) |
 
 ## Package layout
 
