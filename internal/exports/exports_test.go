@@ -61,7 +61,7 @@ func create(t *testing.T, s *Store, position int64) Export {
 func TestCreate(t *testing.T) {
 	f := loadFixtures(t)
 	h := newHistory(t, f)
-	s := NewStore(h)
+	s := NewStore(h.Snapshot)
 	head := f.Revisions[len(f.Revisions)-1].Sequence
 	for position := int64(0); position <= head; position++ {
 		e := create(t, s, position)
@@ -91,7 +91,7 @@ func TestCreate(t *testing.T) {
 // at the manifest's position. It reads the files with internal/expected and
 // compares with its matching rule, as the runner does.
 func TestExpectedManifests(t *testing.T) {
-	s := NewStore(newHistory(t, loadFixtures(t)))
+	s := NewStore(newHistory(t, loadFixtures(t)).Snapshot)
 	files, err := expected.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +217,7 @@ func coverageFields(c Coverage) map[string]any {
 func TestCoverageOfSeveralSeries(t *testing.T) {
 	f := loadFixtures(t)
 	last := f.Revisions[len(f.Revisions)-1]
-	base := create(t, NewStore(newHistory(t, f)), last.Sequence)
+	base := create(t, NewStore(newHistory(t, f).Snapshot), last.Sequence)
 
 	extra := last
 	extra.Sequence = last.Sequence + 1
@@ -230,7 +230,7 @@ func TestCoverageOfSeveralSeries(t *testing.T) {
 	f.Series = append(f.Series, fixtures.Series{SeriesID: extra.SeriesID, DatasetID: dataset})
 	f.Revisions = append(f.Revisions, extra)
 
-	e := create(t, NewStore(newHistory(t, f)), extra.Sequence)
+	e := create(t, NewStore(newHistory(t, f).Snapshot), extra.Sequence)
 	want := Coverage{
 		SeriesIDs:        []string{"a-index", "activity-index"},
 		ObservationCount: base.Coverage.ObservationCount + 1,
@@ -251,7 +251,7 @@ func show(c Coverage) string {
 // TestEmptySnapshot checks an export at position 0: no series, zero counts,
 // no periods, and an empty file.
 func TestEmptySnapshot(t *testing.T) {
-	s := NewStore(newHistory(t, loadFixtures(t)))
+	s := NewStore(newHistory(t, loadFixtures(t)).Snapshot)
 	e := create(t, s, 0)
 	sum := sha256.Sum256(nil)
 	if !reflect.DeepEqual(e.Coverage, Coverage{SeriesIDs: []string{}}) {
@@ -305,7 +305,7 @@ func (c *chunks) Read(p []byte) (int, error) {
 func TestIdentifiersAreNeverReused(t *testing.T) {
 	a, b, c := bytes.Repeat([]byte{0xa1}, idBytes), bytes.Repeat([]byte{0xb2}, idBytes), bytes.Repeat([]byte{0xc3}, idBytes)
 	random := chunks{a, a, b, a, b, c}
-	s := newStore(newHistory(t, loadFixtures(t)), &issuer{random: &random, issued: map[string]bool{}})
+	s := newStore(newHistory(t, loadFixtures(t)).Snapshot, &issuer{random: &random, issued: map[string]bool{}})
 
 	first := create(t, s, 1)
 	second := create(t, s, 1)
@@ -330,7 +330,7 @@ func TestIdentifiersAreNeverReused(t *testing.T) {
 // supply fails the export, which the store then does not hold.
 func TestRandomSourceFailure(t *testing.T) {
 	random := chunks{}
-	s := newStore(newHistory(t, loadFixtures(t)), &issuer{random: &random, issued: map[string]bool{}})
+	s := newStore(newHistory(t, loadFixtures(t)).Snapshot, &issuer{random: &random, issued: map[string]bool{}})
 	if _, err := s.Create(dataset, 1, createdAt); !errors.Is(err, io.EOF) {
 		t.Errorf("err %v, want io.EOF", err)
 	}
@@ -342,7 +342,7 @@ func TestRandomSourceFailure(t *testing.T) {
 // TestConcurrentCreate creates exports in parallel, and in parallel with
 // clearing, and checks that every identifier is distinct.
 func TestConcurrentCreate(t *testing.T) {
-	s := NewStore(newHistory(t, loadFixtures(t)))
+	s := NewStore(newHistory(t, loadFixtures(t)).Snapshot)
 	const n = 32
 	ids := make([]string, n)
 	errs := make([]error, n)

@@ -106,6 +106,7 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	write(w, "application/json", status, body)
 }
 
+// write writes body encoded as JSON and followed by a newline.
 func write(w http.ResponseWriter, contentType string, status int, body any) {
 	data, err := json.Marshal(body)
 	if err != nil {
@@ -114,7 +115,13 @@ func write(w http.ResponseWriter, contentType string, status int, body any) {
 		contentType, status = "application/problem+json", http.StatusInternalServerError
 		data, _ = json.Marshal(newProblem("internal", nil, "The response could not be encoded."))
 	}
-	data = append(data, '\n')
+	writeBytes(w, contentType, status, append(data, '\n'))
+}
+
+// writeBytes writes a response whose body is data, with its Content-Type and
+// Content-Length. Every response goes through it: JSON bodies through write,
+// and export files directly.
+func writeBytes(w http.ResponseWriter, contentType string, status int, data []byte) {
 	h := w.Header()
 	h.Set("Content-Type", contentType)
 	h.Set("Content-Length", strconv.Itoa(len(data)))
